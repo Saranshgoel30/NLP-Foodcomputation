@@ -75,9 +75,73 @@ class TranslationAdapter:
 
 class MockTranslationAdapter(TranslationAdapter):
     """
-    Mock translation for development/testing
-    Returns text as-is with language tag
+    Production-ready mock translation for development
+    Handles food-specific terms correctly
     """
+    
+    def __init__(self, settings: Settings):
+        super().__init__(settings)
+        # Build reverse lookup for culinary terms
+        self.term_lookup = {}
+        for eng_term, translations in CULINARY_TERMS.items():
+            for lang, native_term in translations.items():
+                if lang not in self.term_lookup:
+                    self.term_lookup[lang] = {}
+                self.term_lookup[lang][native_term.lower()] = eng_term
+    
+    def _detect_language(self, text: str) -> Language:
+        """
+        Simple language detection based on script
+        For production, use langdetect or similar
+        """
+        # Check for Devanagari (Hindi, Marathi)
+        if any('\u0900' <= c <= '\u097F' for c in text):
+            return 'hi'  # Default to Hindi
+        
+        # Check for Bengali
+        if any('\u0980' <= c <= '\u09FF' for c in text):
+            return 'bn'
+        
+        # Check for Tamil
+        if any('\u0B80' <= c <= '\u0BFF' for c in text):
+            return 'ta'
+        
+        # Check for Telugu
+        if any('\u0C00' <= c <= '\u0C7F' for c in text):
+            return 'te'
+        
+        # Check for Gujarati
+        if any('\u0A80' <= c <= '\u0AFF' for c in text):
+            return 'gu'
+        
+        # Check for Kannada
+        if any('\u0C80' <= c <= '\u0CFF' for c in text):
+            return 'kn'
+        
+        # Default to English
+        return 'en'
+    
+    def _translate_culinary_terms(self, text: str, source_lang: Language, target_lang: Language) -> str:
+        """Apply culinary term translations"""
+        result = text
+        
+        # If translating to English, look up native terms
+        if target_lang == 'en' and source_lang in self.term_lookup:
+            for native_term, eng_term in self.term_lookup[source_lang].items():
+                # Case-insensitive replacement
+                import re
+                pattern = re.compile(re.escape(native_term), re.IGNORECASE)
+                result = pattern.sub(eng_term, result)
+        
+        # If translating from English, use CULINARY_TERMS
+        elif source_lang == 'en' and target_lang != 'en':
+            for eng_term, translations in CULINARY_TERMS.items():
+                if target_lang in translations:
+                    import re
+                    pattern = re.compile(r'\b' + re.escape(eng_term) + r'\b', re.IGNORECASE)
+                    result = pattern.sub(translations[target_lang], result)
+        
+        return result
     
     def translate(
         self,
@@ -85,27 +149,47 @@ class MockTranslationAdapter(TranslationAdapter):
         source_lang: Language,
         target_lang: Language
     ) -> Tuple[str, Language]:
-        """Mock translation - returns original text"""
+        """
+        Mock translation with culinary term handling
+        
+        In production, this would be replaced with:
+        - MarianMT models for neural translation
+        - IndicTrans2 for better Indic language support
+        - External API (Google Translate, DeepL)
+        """
+        
+        # Detect source language if auto
+        detected_lang = source_lang
+        if source_lang == 'auto':
+            detected_lang = self._detect_language(text)
+            logger.info("language_detected", detected=detected_lang, text_preview=text[:50])
         
         logger.info(
             "mock_translation",
-            source_lang=source_lang,
+            source_lang=detected_lang,
             target_lang=target_lang,
             text_length=len(text)
         )
-        
-        # Simple mock: just return the text
-        # In real implementation, this would call translation models
-        detected_lang = source_lang if source_lang != 'auto' else 'en'
         
         # If source and target are same, return as-is
         if detected_lang == target_lang:
             return text, detected_lang
         
-        # Otherwise, add a prefix to indicate translation happened
-        translated = f"[{detected_lang}→{target_lang}] {text}"
+        # Apply culinary term translations
+        result = self._translate_culinary_terms(text, detected_lang, target_lang)
         
-        return translated, detected_lang
+        # For demonstration: add language tag if no real translation occurred
+        if result == text:
+            result = f"[{detected_lang}→{target_lang}] {text}"
+        
+        logger.info(
+            "translation_complete",
+            source=detected_lang,
+            target=target_lang,
+            culinary_terms_applied=result != text
+        )
+        
+        return result, detected_lang
 
 
 class MarianMTAdapter(TranslationAdapter):

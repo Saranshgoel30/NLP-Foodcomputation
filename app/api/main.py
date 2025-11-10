@@ -14,7 +14,7 @@ from .config import get_settings
 from .models import (
     SearchRequest, SearchResponse, STTRequest, STTResponse,
     TranslateRequest, TranslateResponse, NLUParseRequest, NLUParseResponse,
-    SPARQLBuildRequest, SPARQLBuildResponse, APIError, Recipe
+    SPARQLBuildRequest, SPARQLBuildResponse, APIError, Recipe, UserQuery
 )
 from .graphdb_client import GraphDBClient
 from .sparql_builder import build_sparql_query
@@ -195,7 +195,389 @@ async def health_check():
     }
 
 
-# NLU endpoint
+# ============================================================================
+# SPEECH-TO-TEXT ENDPOINT
+# ============================================================================
+
+@app.post("/stt", response_model=STTResponse)
+async def speech_to_text(request: STTRequest):
+    """
+    Convert speech audio to text using Whisper
+    
+    **Supports Indian Languages:**
+    - Hindi (hi), Bengali (bn), Telugu (te), Marathi (mr)
+    - Tamil (ta), Gujarati (gu), Kannada (kn), Malayalam (ml)
+    - Odia (or), Punjabi (pa), English (en)
+    
+    **Audio Requirements:**
+    - Format: webm, wav, mp3, ogg, m4a
+    - Max size: 25MB
+    - Encoding: Base64
+    
+    **Example Request:**
+    ```json
+    {
+        "audio": "base64_encoded_audio_data",
+        "format": "webm"
+    }
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+        "transcript": "मुझे पनीर टिक्का की रेसिपी चाहिए",
+        "confidence": 0.95,
+        "detectedLanguage": "hi"
+    }
+    ```
+    """
+    if not stt_adapter:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Speech-to-text service is not available. Whisper model may not be loaded."
+        )
+    
+    start_time = time.time()
+    
+    try:
+        # Validate request
+        if not request.audio:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Audio data is required"
+            )
+        
+        # Log request (without full audio data)
+        audio_size = len(request.audio) if request.audio else 0
+        logger.info(
+            "stt_request_received",
+            audio_size_bytes=audio_size,
+            format=request.format
+        )
+        
+        # Transcribe audio
+        transcript, confidence, detected_lang = stt_adapter.transcribe(
+            audio_base64=request.audio,
+            format=request.format
+        )
+        
+        duration_ms = (time.time() - start_time) * 1000
+        
+        logger.info(
+            "stt_completed",
+            transcript_length=len(transcript),
+            confidence=f"{confidence:.2%}",
+            detected_language=detected_lang,
+            duration_ms=f"{duration_ms:.0f}"
+        )
+        
+        return STTResponse(
+            transcript=transcript,
+            confidence=confidence,
+            detectedLanguage=detected_lang
+        )
+        
+    except ValueError as e:
+        # Validation errors (bad input)
+        logger.warning("stt_validation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except RuntimeError as e:
+        # Service errors (transcription failed)
+        logger.error("stt_service_error", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Transcription failed: {str(e)}"
+        )
+    except Exception as e:
+        # Unexpected errors
+        logger.error("stt_unexpected_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred during transcription"
+        )
+
+
+# ============================================================================
+# TRANSLATION ENDPOINT
+# ============================================================================
+
+@app.post("/translate", response_model=TranslateResponse)
+async def translate_text(request: TranslateRequest):
+    """
+    Translate text between languages
+    
+    **Supported Languages:**
+    - English (en)
+    - Hindi (hi), Bengali (bn), Telugu (te), Marathi (mr)
+    - Tamil (ta), Gujarati (gu), Kannada (kn), Malayalam (ml)
+    - Odia (or), Punjabi (pa)
+    
+    **Translation Modes:**
+    - Auto-detect source language (set sourceLang='auto')
+    - Bidirectional: Any supported language ↔ English
+    - Uses culinary terminology table for food-specific accuracy
+    
+    **Example Request:**
+    ```json
+    {
+        "text": "मुझे पनीर टिक्का की रेसिपी चाहिए",
+        "sourceLang": "auto",
+        "targetLang": "en"
+    }
+    ```
+    
+    **Example Response:**
+    ```json
+    {
+        "translatedText": "I want paneer tikka recipe",
+        "detectedSourceLang": "hi",
+        "confidence": 0.92
+    }
+    ```
+    """
+    if not translation_adapter:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Translation service is not available"
+        )
+    
+    start_time = time.time()
+    
+    try:
+        # Validate request
+        if not request.text or not request.text.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Text is required and cannot be empty"
+            )
+        
+        if len(request.text) > 5000:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Text too long (max 5000 characters)"
+            )
+        
+        logger.info(
+            "translation_request",
+            text_length=len(request.text),
+            source_lang=request.sourceLang,
+            target_lang=request.targetLang
+        )
+        
+        # Translate
+        translated_text, detected_source = translation_adapter.translate(
+            text=request.text,
+            source_lang=request.sourceLang,
+            target_lang=request.targetLang
+        )
+        
+        duration_ms = (time.time() - start_time) * 1000
+        
+        logger.info(
+            "translation_completed",
+            detected_source=detected_source,
+            output_length=len(translated_text),
+            duration_ms=f"{duration_ms:.0f}"
+        )
+        
+        return TranslateResponse(
+            translatedText=translated_text,
+            detectedSourceLang=detected_source,
+            confidence=0.9  # Mock confidence for now
+        )
+        
+    except ValueError as e:
+        logger.warning("translation_validation_failed", error=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        logger.error("translation_error", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Translation failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# VOICE SEARCH ENDPOINT (STT → Translation → NLP → Search Pipeline)
+# ============================================================================
+
+@app.post("/voice-search", response_model=SearchResponse)
+async def voice_search(request: STTRequest):
+    """
+    **End-to-end Voice Search Pipeline**
+    
+    Chains multiple AI services for multilingual voice recipe search:
+    1. **STT**: Transcribe audio to text (Whisper)
+    2. **Translation**: Translate to English if needed
+    3. **NLP**: Parse constraints from query
+    4. **Search**: Find matching recipes
+    
+    **Perfect for Indian users speaking in native languages!**
+    
+    **Workflow Example:**
+    ```
+    User speaks: "मुझे 30 मिनट में पनीर टिक्का बनाने की रेसिपी चाहिए"
+    ↓ STT (Whisper)
+    → Hindi transcript detected
+    ↓ Translation
+    → "I want paneer tikka recipe in 30 minutes"
+    ↓ NLP
+    → include=[paneer, tikka], maxCookMinutes=30
+    ↓ Search
+    → Returns matching recipes
+    ```
+    
+    **Request:**
+    ```json
+    {
+        "audio": "base64_encoded_webm_audio",
+        "format": "webm"
+    }
+    ```
+    
+    **Response:** Same as /search endpoint
+    """
+    pipeline_start = time.time()
+    
+    try:
+        logger.info("voice_search_started", audio_size=len(request.audio))
+        
+        # ============================================================
+        # STEP 1: Speech-to-Text
+        # ============================================================
+        if not stt_adapter:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Speech-to-text service unavailable"
+            )
+        
+        stt_start = time.time()
+        transcript, stt_confidence, detected_lang = stt_adapter.transcribe(
+            audio_base64=request.audio,
+            format=request.format
+        )
+        stt_duration = (time.time() - stt_start) * 1000
+        
+        if not transcript:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Could not transcribe audio. Please try again."
+            )
+        
+        logger.info(
+            "voice_search_stt_complete",
+            transcript=transcript,
+            language=detected_lang,
+            confidence=stt_confidence,
+            duration_ms=stt_duration
+        )
+        
+        print(f"🎤 STT: '{transcript}' (lang={detected_lang}, conf={stt_confidence:.2f})", flush=True)
+        
+        # ============================================================
+        # STEP 2: Translation (if not English)
+        # ============================================================
+        search_text = transcript
+        translated = False
+        
+        if detected_lang != 'en':
+            if not translation_adapter:
+                logger.warning("translation_unavailable", using_original=True)
+                print(f"⚠️  Translation unavailable, using original text", flush=True)
+            else:
+                translate_start = time.time()
+                try:
+                    search_text, _ = translation_adapter.translate(
+                        text=transcript,
+                        source_lang=detected_lang,
+                        target_lang='en'
+                    )
+                    translate_duration = (time.time() - translate_start) * 1000
+                    translated = True
+                    
+                    logger.info(
+                        "voice_search_translation_complete",
+                        original=transcript,
+                        translated=search_text,
+                        duration_ms=translate_duration
+                    )
+                    
+                    print(f"🌐 Translated: '{search_text}'", flush=True)
+                except Exception as e:
+                    logger.warning("translation_failed", error=str(e), using_original=True)
+                    print(f"⚠️  Translation failed: {e}, using original", flush=True)
+        
+        # ============================================================
+        # STEP 3: NLP Parsing
+        # ============================================================
+        nlp_start = time.time()
+        constraints, nlp_confidence = parse_query(search_text, 'en')
+        nlp_duration = (time.time() - nlp_start) * 1000
+        
+        logger.info(
+            "voice_search_nlp_complete",
+            constraints=constraints.model_dump(exclude_none=True),
+            confidence=nlp_confidence,
+            duration_ms=nlp_duration
+        )
+        
+        print(f"🧠 NLP: include={constraints.include}, exclude={constraints.exclude}, "
+              f"cuisine={constraints.cuisine}, diet={constraints.diet}", flush=True)
+        
+        # ============================================================
+        # STEP 4: Search
+        # ============================================================
+        search_request = SearchRequest(
+            query=UserQuery(
+                text=search_text,
+                lang='en',
+                constraints=constraints
+            )
+        )
+        
+        # Reuse existing search endpoint logic
+        search_result = await search(search_request)
+        
+        # Add voice search metadata to response
+        pipeline_duration = (time.time() - pipeline_start) * 1000
+        
+        logger.info(
+            "voice_search_complete",
+            total_duration_ms=pipeline_duration,
+            stt_ms=stt_duration,
+            nlp_ms=nlp_duration,
+            results_count=search_result.count,
+            original_language=detected_lang,
+            translated=translated
+        )
+        
+        print(f"✅ Voice search complete: {search_result.count} results in {pipeline_duration:.0f}ms", flush=True)
+        
+        # Enhance response with original transcript for UI display
+        search_result.translatedQuery = transcript if translated else None
+        
+        return search_result
+        
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions
+    except Exception as e:
+        logger.error("voice_search_failed", error=str(e), exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Voice search pipeline failed: {str(e)}"
+        )
+
+
+# ============================================================================
+# NLU ENDPOINT
+# ============================================================================
+
 @app.post("/nlu/parse", response_model=NLUParseResponse)
 async def parse_nlu(request: NLUParseRequest):
     """
@@ -250,6 +632,33 @@ async def build_sparql(request: SPARQLBuildRequest):
         )
 
 
+@app.post("/parse-query", response_model=NLUParseResponse)
+async def parse_query_endpoint(request: NLUParseRequest):
+    """
+    Parse natural language query into structured constraints using NLP
+    
+    Example:
+        Input: "vegetarian paneer recipes without onion under 30 minutes"
+        Output: Structured constraints with diet, include, exclude, time
+    """
+    try:
+        from .nlu_parser import parse_query
+        
+        constraints, confidence = parse_query(request.text, request.lang)
+        
+        return NLUParseResponse(
+            constraints=constraints,
+            confidence=confidence,
+            originalText=request.text
+        )
+    except Exception as e:
+        logger.error("nlu_parse_failed", error=str(e), text=request.text)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"NLU parsing failed: {str(e)}"
+        )
+
+
 # Main search endpoint - Using Food Graph API
 @app.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
@@ -266,6 +675,22 @@ async def search(request: SearchRequest):
         print(f"🔍 SEARCH REQUEST: '{search_text}'", flush=True)
         logger.info("search_started", query=search_text, lang=query.lang)
         
+        # Parse NLP constraints from query if not already provided
+        from .nlu_parser import parse_query
+        
+        if query.constraints is None:
+            print(f"🧠 Parsing NLP constraints from query...", flush=True)
+            constraints, confidence = parse_query(search_text, query.lang)
+            query.constraints = constraints
+            print(f"✅ NLP Parsing (confidence: {confidence:.2f}):", flush=True)
+            print(f"   - Include: {constraints.include}", flush=True)
+            print(f"   - Exclude: {constraints.exclude}", flush=True)
+            print(f"   - Cuisine: {constraints.cuisine}", flush=True)
+            print(f"   - Diet: {constraints.diet}", flush=True)
+            print(f"   - Course: {constraints.course}", flush=True)
+            print(f"   - Max Cook Time: {constraints.maxCookMinutes}m", flush=True)
+            logger.info("nlp_parsed", constraints=constraints.model_dump(exclude_none=True), confidence=confidence)
+        
         # Call the Food Graph API
         import httpx
         food_api_url = "http://16.170.211.162:8001/recipes"
@@ -279,28 +704,80 @@ async def search(request: SearchRequest):
         logger.info("api_response_received", total_recipes=len(api_recipes))
         print(f"📡 Received {len(api_recipes)} recipes from Food Graph API", flush=True)
         
-        # Intelligent filtering: match query against multiple fields
+        # Intelligent filtering: match query against multiple fields + NLP constraints
         matched_recipes = []
+        constraints = query.constraints
         
         for api_recipe in api_recipes:
             # Extract searchable text from recipe
             recipe_name = (api_recipe.get("name") or "").lower()
-            cuisine = (api_recipe.get("cuisine") or "").lower()
-            diet = (api_recipe.get("diet") or "").lower()
-            course = (api_recipe.get("course") or "").lower()
+            recipe_cuisine = (api_recipe.get("cuisine") or "").lower()
+            recipe_diet = (api_recipe.get("diet") or "").lower()
+            recipe_course = (api_recipe.get("course") or "").lower()
             
             # Extract ingredient names from the structured data
-            ingredient_text = ""
+            ingredient_names = []
             ingredient_desc = api_recipe.get("ingredient_description", [])
             if isinstance(ingredient_desc, list):
                 for section in ingredient_desc:
                     if isinstance(section, dict) and "items" in section:
                         items = section["items"]
                         if isinstance(items, dict):
-                            ingredient_text += " " + " ".join(items.keys()).lower()
+                            ingredient_names.extend([name.lower() for name in items.keys()])
             
+            ingredient_text = " ".join(ingredient_names)
+            
+            # === NLP CONSTRAINT FILTERING ===
+            
+            # 1. Check cuisine constraint
+            if constraints and constraints.cuisine:
+                if not any(c.lower() in recipe_cuisine for c in constraints.cuisine):
+                    continue  # Skip if cuisine doesn't match
+            
+            # 2. Check diet constraint
+            if constraints and constraints.diet:
+                if not any(d.lower() in recipe_diet for d in constraints.diet):
+                    continue  # Skip if diet doesn't match
+            
+            # 3. Check course constraint
+            if constraints and constraints.course:
+                if not any(c.lower() in recipe_course for c in constraints.course):
+                    continue  # Skip if course doesn't match
+            
+            # 4. Check excluded ingredients
+            if constraints and constraints.exclude:
+                has_excluded = False
+                for excluded in constraints.exclude:
+                    if any(excluded.lower() in ing for ing in ingredient_names):
+                        has_excluded = True
+                        break
+                if has_excluded:
+                    continue  # Skip if contains excluded ingredient
+            
+            # 5. Check included ingredients (at least one must match)
+            if constraints and constraints.include:
+                has_included = False
+                for included in constraints.include:
+                    if any(included.lower() in ing for ing in ingredient_names):
+                        has_included = True
+                        break
+                if not has_included:
+                    continue  # Skip if doesn't contain any required ingredient
+            
+            # 6. Check time constraints
+            if constraints and constraints.maxCookMinutes:
+                cook_time_str = api_recipe.get("cook_time", "")
+                if cook_time_str:
+                    import re
+                    match = re.search(r'(\d+)', str(cook_time_str))
+                    if match:
+                        cook_minutes = int(match.group(1))
+                        if cook_minutes > constraints.maxCookMinutes:
+                            continue  # Skip if too long
+            
+            # === TEXT MATCHING (fallback for queries without constraints) ===
             # Combine all searchable text
-            searchable = f"{recipe_name} {cuisine} {diet} {course} {ingredient_text}"
+            searchable = f"{recipe_name} {recipe_cuisine} {recipe_diet} {recipe_course} {ingredient_text}"
             
             # Check if query terms match (support multi-word queries)
             query_terms = search_text.split()
