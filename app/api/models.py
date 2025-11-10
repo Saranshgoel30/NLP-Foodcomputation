@@ -92,29 +92,28 @@ class SearchResponse(BaseModel):
 class STTRequest(BaseModel):
     """Speech-to-text request"""
     audio: str = Field(..., description="Base64 encoded audio data")
-    format: Optional[str] = Field('webm', description="Audio format")
-    lang: Optional[Language] = Field('auto', description="Expected language")
+    format: Optional[str] = Field('webm', description="Audio format (webm, wav, mp3, ogg, m4a)")
 
 
 class STTResponse(BaseModel):
     """Speech-to-text response"""
-    transcript: str
-    confidence: float = Field(..., ge=0.0, le=1.0)
-    lang: Language
+    transcript: str = Field(..., description="Transcribed text")
+    confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score")
+    detectedLanguage: str = Field(..., description="Detected language code")
 
 
 class TranslateRequest(BaseModel):
     """Translation request"""
-    text: str = Field(..., min_length=1, max_length=5000)
-    sourceLang: Language = Field(default='auto')
-    targetLang: Language
+    text: str = Field(..., min_length=1, max_length=5000, description="Text to translate")
+    sourceLang: Language = Field(default='auto', description="Source language (auto for detection)")
+    targetLang: Language = Field(..., description="Target language")
 
 
 class TranslateResponse(BaseModel):
     """Translation response"""
-    translatedText: str
-    sourceLang: Language
-    targetLang: Language
+    translatedText: str = Field(..., description="Translated text")
+    detectedSourceLang: Language = Field(..., description="Detected source language")
+    confidence: float = Field(default=0.9, ge=0.0, le=1.0, description="Translation confidence")
 
 
 class NLUParseRequest(BaseModel):

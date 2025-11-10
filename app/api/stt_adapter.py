@@ -34,7 +34,25 @@ class STTAdapter:
 
 
 class WhisperSTT(STTAdapter):
-    """Whisper-based STT implementation"""
+    """
+    Production-grade Whisper STT implementation
+    Supports multiple audio formats and Indian languages
+    """
+    
+    # Language code mapping: Whisper -> ISO 639-1
+    LANG_MAP = {
+        'hindi': 'hi',
+        'bengali': 'bn',
+        'telugu': 'te',
+        'marathi': 'mr',
+        'tamil': 'ta',
+        'gujarati': 'gu',
+        'kannada': 'kn',
+        'malayalam': 'ml',
+        'odia': 'or',
+        'punjabi': 'pa',
+        'english': 'en'
+    }
     
     def __init__(self, settings: Settings):
         super().__init__(settings)
@@ -42,64 +60,134 @@ class WhisperSTT(STTAdapter):
         self._load_model()
     
     def _load_model(self):
-        """Load Whisper model"""
+        """Load Whisper model with error handling"""
         try:
             import whisper
-            model_name = self.settings.stt_model_name
-            logger.info("loading_whisper_model", model=model_name)
-            self.model = whisper.load_model(model_name)
-            logger.info("whisper_model_loaded", model=model_name)
+            import torch
+            
+            model_name = self.settings.stt_model_name or "base"
+            
+            # Check CUDA availability
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            logger.info("loading_whisper_model", model=model_name, device=device)
+            
+            self.model = whisper.load_model(model_name, device=device)
+            
+            logger.info(
+                "whisper_model_loaded",
+                model=model_name,
+                device=device,
+                supported_languages=len(whisper.tokenizer.LANGUAGES)
+            )
+        except ImportError as e:
+            logger.error("whisper_not_installed", error=str(e))
+            raise RuntimeError("Whisper library not installed. Run: pip install openai-whisper")
         except Exception as e:
             logger.error("failed_to_load_whisper", error=str(e))
-            raise
+            raise RuntimeError(f"Failed to load Whisper model: {str(e)}")
     
-    def transcribe(self, audio_base64: str, format: str = 'webm') -> Tuple[str, float, Language]:
-        """Transcribe using Whisper"""
+    def transcribe(self, audio_base64: str, format: str = 'webm') -> Tuple[str, float, str]:
+        """
+        Transcribe audio using Whisper with robust error handling
+        
+        Args:
+            audio_base64: Base64 encoded audio data
+            format: Audio format (webm, wav, mp3, ogg, m4a)
+            
+        Returns:
+            (transcript, confidence, detected_language_code)
+            
+        Raises:
+            ValueError: Invalid audio data
+            RuntimeError: Transcription failed
+        """
         if not self.model:
             raise RuntimeError("Whisper model not loaded")
         
+        import tempfile
+        import os
+        
+        tmp_path = None
         try:
-            # Decode base64 audio
-            audio_bytes = base64.b64decode(audio_base64)
+            # Validate base64 input
+            if not audio_base64:
+                raise ValueError("Empty audio data")
             
-            # Save to temporary file (Whisper works with files)
-            import tempfile
+            # Decode base64 audio
+            try:
+                audio_bytes = base64.b64decode(audio_base64)
+            except Exception as e:
+                raise ValueError(f"Invalid base64 audio data: {str(e)}")
+            
+            # Validate audio size (max 25MB)
+            audio_size_mb = len(audio_bytes) / (1024 * 1024)
+            if audio_size_mb > 25:
+                raise ValueError(f"Audio file too large: {audio_size_mb:.1f}MB (max 25MB)")
+            
+            logger.info("transcribing_audio", size_mb=f"{audio_size_mb:.2f}", format=format)
+            
+            # Save to temporary file (Whisper requires file input)
             with tempfile.NamedTemporaryFile(suffix=f'.{format}', delete=False) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
             
-            # Transcribe
+            # Transcribe with Whisper
             result = self.model.transcribe(
                 tmp_path,
-                language=None,  # Auto-detect
-                task='transcribe'
+                language=None,  # Auto-detect language
+                task='transcribe',
+                fp16=False,  # Use FP32 for better accuracy
+                verbose=False
             )
             
+            # Extract transcript and clean it
             transcript = result['text'].strip()
-            # Whisper doesn't provide confidence, use segments average if available
-            confidence = 0.9  # Default high confidence for Whisper
+            
+            if not transcript:
+                logger.warning("empty_transcription")
+                return "", 0.0, "en"
+            
+            # Calculate average confidence from segments
+            confidence = 0.9  # Default for Whisper (no direct confidence)
             if 'segments' in result and result['segments']:
-                confidences = [seg.get('confidence', 0.9) for seg in result['segments']]
-                confidence = sum(confidences) / len(confidences)
+                # Some Whisper versions provide no_speech_prob per segment
+                seg_confidences = []
+                for seg in result['segments']:
+                    # Confidence = 1 - no_speech_probability
+                    no_speech = seg.get('no_speech_prob', 0.1)
+                    seg_confidences.append(1.0 - no_speech)
+                
+                if seg_confidences:
+                    confidence = sum(seg_confidences) / len(seg_confidences)
             
-            detected_lang = result.get('language', 'en')
-            
-            # Clean up temp file
-            import os
-            os.unlink(tmp_path)
+            # Map language to ISO code
+            detected_lang = result.get('language', 'en').lower()
+            lang_code = self.LANG_MAP.get(detected_lang, detected_lang)
             
             logger.info(
-                "whisper_transcribed",
+                "transcription_complete",
                 transcript_length=len(transcript),
-                confidence=confidence,
-                language=detected_lang
+                word_count=len(transcript.split()),
+                confidence=f"{confidence:.2%}",
+                detected_language=lang_code,
+                audio_duration=result.get('duration', 0)
             )
             
-            return transcript, confidence, detected_lang
+            return transcript, confidence, lang_code
             
+        except ValueError:
+            raise  # Re-raise validation errors
         except Exception as e:
-            logger.error("whisper_transcription_failed", error=str(e))
-            raise
+            logger.error("whisper_transcription_failed", error=str(e), error_type=type(e).__name__)
+            raise RuntimeError(f"Transcription failed: {str(e)}")
+        finally:
+            # Always clean up temp file
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                    logger.debug("cleaned_temp_file", path=tmp_path)
+                except Exception as e:
+                    logger.warning("failed_to_cleanup_temp_file", path=tmp_path, error=str(e))
 
 
 class VoskSTT(STTAdapter):
