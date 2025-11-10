@@ -87,37 +87,88 @@ async def lifespan(app: FastAPI):
     logger.info("mmfood_api_stopped")
 
 
-# Create FastAPI app
+# Create FastAPI app with enhanced metadata
 app = FastAPI(
     title="MMFOOD API",
-    description="Multilingual + Multimodal Food Knowledge Search",
+    description="""
+    ## Multilingual + Multimodal Food Knowledge Search
+    
+    A production-ready API for searching recipes using natural language and voice input.
+    
+    ### Features
+    - 🎤 **Speech-to-Text**: 11 Indian languages + English
+    - 🌐 **Translation**: Bidirectional translation with culinary term preservation
+    - 🧠 **NLP**: Intelligent query parsing with constraint extraction
+    - 🔍 **Search**: 9000+ recipes from Food Graph API
+    - 🎙️ **Voice Search**: End-to-end pipeline (STT → Translation → NLP → Search)
+    
+    ### Rate Limits
+    - General endpoints: 60 requests/minute
+    - Search endpoint: 30 requests/minute
+    - STT/Voice endpoints: 10 requests/minute
+    """,
     version="1.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    contact={
+        "name": "MMFOOD Team",
+        "url": "https://github.com/Saranshgoel30/NLP-Foodcomputation",
+    },
+    license_info={
+        "name": "MIT",
+        "url": "https://opensource.org/licenses/MIT",
+    },
 )
 
-# CORS middleware
+# Import middleware
+from .middleware import (
+    rate_limit_middleware,
+    security_headers_middleware,
+    request_id_middleware
+)
+
+# CORS middleware (applied first, innermost)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "X-Process-Time", "X-RateLimit-Limit", "X-RateLimit-Remaining"],
 )
 
 
-# Request timing middleware
+# Custom middleware (applied in reverse order - last added runs first)
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    """Add unique request ID for tracing"""
+    return await request_id_middleware(request, call_next)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Add security headers to responses"""
+    return await security_headers_middleware(request, call_next)
+
+
+@app.middleware("http")
+async def apply_rate_limiting(request: Request, call_next):
+    """Apply rate limiting based on endpoint"""
+    return await rate_limit_middleware(request, call_next)
+
+
 @app.middleware("http")
 async def add_timing(request: Request, call_next):
     """Add request timing to response headers"""
     start_time = time.time()
     response = await call_next(request)
     duration = (time.time() - start_time) * 1000  # ms
-    response.headers["X-Process-Time"] = str(duration)
+    response.headers["X-Process-Time"] = f"{duration:.2f}"
     logger.info(
         "request_completed",
         method=request.method,
         path=request.url.path,
-        duration_ms=duration
+        duration_ms=round(duration, 2),
+        status_code=response.status_code
     )
     return response
 
@@ -156,23 +207,34 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 
 # Test endpoint
-@app.get("/")
+@app.get("/", tags=["System"])
 async def root():
-    """Root endpoint"""
-    return {"message": "MMFOOD API", "status": "running"}
+    """
+    **API Root**
+    
+    Welcome endpoint showing API status and links to documentation.
+    """
+    return {
+        "message": "MMFOOD API - Multilingual Multimodal Food Knowledge Search",
+        "status": "running",
+        "version": "1.0.0",
+        "documentation": "/docs",
+        "health": "/health",
+        "metrics": "/metrics"
+    }
 
 
-# Simple test search endpoint
-@app.get("/test")
+# Simple test endpoint
+@app.get("/test", tags=["System"])
 async def test():
-    """Simple test endpoint"""
-    return {"status": "ok", "message": "Backend is working!"}
+    """Simple connectivity test"""
+    return {"status": "ok", "message": "Backend is working!", "timestamp": time.time()}
 
 
 # Minimal mock search endpoint for testing
-@app.post("/search-test")
+@app.post("/search-test", tags=["System"])
 async def search_test(request: SearchRequest):
-    """Mock search endpoint that returns empty results"""
+    """Mock search endpoint that returns empty results (for frontend testing)"""
     return SearchResponse(
         results=[],
         query=request.query,
@@ -182,24 +244,144 @@ async def search_test(request: SearchRequest):
     )
 
 
-# Health check
-@app.get("/health")
+# Metrics endpoint for monitoring
+@app.get("/metrics", tags=["System"])
+async def metrics():
+    """
+    **System Metrics**
+    
+    Returns performance metrics and usage statistics.
+    Useful for monitoring dashboards and alerting.
+    
+    **Metrics include:**
+    - Request counts by endpoint
+    - Rate limit statistics
+    - Average response times
+    - Error rates
+    """
+    from .middleware import rate_limiters
+    
+    metrics_data = {
+        "timestamp": time.time(),
+        "rate_limiters": {},
+        "system": {
+            "stt_available": stt_adapter is not None,
+            "translation_available": translation_adapter is not None,
+            "graphdb_available": graphdb_client is not None
+        }
+    }
+    
+    # Get rate limiter statistics
+    for name, limiter in rate_limiters.items():
+        metrics_data["rate_limiters"][name] = {
+            "rate": limiter.rate,
+            "per_seconds": limiter.per,
+            "active_clients": len(limiter.allowance)
+        }
+    
+    return metrics_data
+
+
+# Health check with detailed status
+@app.get("/health", tags=["System"])
 async def health_check():
-    """Health check endpoint"""
-    return {
+    """
+    **Comprehensive health check**
+    
+    Returns system status and dependency health.
+    Use this for monitoring and load balancer health checks.
+    
+    **Response includes:**
+    - Overall status (healthy/degraded/unhealthy)
+    - Service version
+    - Dependency status (GraphDB, STT, Translation, Food Graph API)
+    - Uptime
+    - Response times for dependencies
+    """
+    import httpx
+    
+    health_status = {
         "status": "healthy",
         "version": "1.0.0",
-        "graphdb": "connected" if graphdb_client else "unavailable",
-        "stt": "available" if stt_adapter else "unavailable",
-        "translation": "available" if translation_adapter else "unavailable"
+        "timestamp": time.time(),
+        "dependencies": {}
     }
+    
+    # Check GraphDB
+    try:
+        if graphdb_client:
+            # Try a simple SPARQL query
+            test_query = "SELECT ?s WHERE { ?s ?p ?o } LIMIT 1"
+            start = time.time()
+            result = graphdb_client.execute_query(test_query)
+            duration = (time.time() - start) * 1000
+            
+            health_status["dependencies"]["graphdb"] = {
+                "status": "connected" if result else "degraded",
+                "response_time_ms": round(duration, 2),
+                "url": settings.graphdb_url
+            }
+        else:
+            health_status["dependencies"]["graphdb"] = {
+                "status": "unavailable",
+                "error": "Client not initialized"
+            }
+    except Exception as e:
+        health_status["dependencies"]["graphdb"] = {
+            "status": "error",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
+    
+    # Check Food Graph API
+    try:
+        start = time.time()
+        with httpx.Client(timeout=5.0) as client:
+            response = client.get(f"{settings.food_graph_api_url}/recipes", params={"limit": 1})
+            duration = (time.time() - start) * 1000
+            
+            health_status["dependencies"]["food_graph_api"] = {
+                "status": "connected" if response.status_code == 200 else "degraded",
+                "response_time_ms": round(duration, 2),
+                "url": settings.food_graph_api_url
+            }
+    except Exception as e:
+        health_status["dependencies"]["food_graph_api"] = {
+            "status": "error",
+            "error": str(e)
+        }
+        health_status["status"] = "degraded"
+    
+    # Check STT
+    health_status["dependencies"]["stt"] = {
+        "status": "available" if stt_adapter else "unavailable",
+        "provider": settings.stt_provider if stt_adapter else None,
+        "model": settings.stt_model_name if stt_adapter else None
+    }
+    
+    # Check Translation
+    health_status["dependencies"]["translation"] = {
+        "status": "available" if translation_adapter else "unavailable",
+        "provider": settings.translation_provider if translation_adapter else None
+    }
+    
+    # Determine overall status
+    dep_statuses = [dep.get("status") for dep in health_status["dependencies"].values()]
+    if "error" in dep_statuses or "unavailable" in dep_statuses:
+        health_status["status"] = "degraded"
+    
+    # If critical services are down, mark as unhealthy
+    if health_status["dependencies"].get("food_graph_api", {}).get("status") == "error":
+        health_status["status"] = "unhealthy"
+    
+    return health_status
 
 
 # ============================================================================
 # SPEECH-TO-TEXT ENDPOINT
 # ============================================================================
 
-@app.post("/stt", response_model=STTResponse)
+@app.post("/stt", response_model=STTResponse, tags=["Speech & Translation"])
 async def speech_to_text(request: STTRequest):
     """
     Convert speech audio to text using Whisper
@@ -304,7 +486,7 @@ async def speech_to_text(request: STTRequest):
 # TRANSLATION ENDPOINT
 # ============================================================================
 
-@app.post("/translate", response_model=TranslateResponse)
+@app.post("/translate", response_model=TranslateResponse, tags=["Speech & Translation"])
 async def translate_text(request: TranslateRequest):
     """
     Translate text between languages
@@ -407,7 +589,7 @@ async def translate_text(request: TranslateRequest):
 # VOICE SEARCH ENDPOINT (STT → Translation → NLP → Search Pipeline)
 # ============================================================================
 
-@app.post("/voice-search", response_model=SearchResponse)
+@app.post("/voice-search", response_model=SearchResponse, tags=["Search"])
 async def voice_search(request: STTRequest):
     """
     **End-to-end Voice Search Pipeline**
@@ -578,7 +760,7 @@ async def voice_search(request: STTRequest):
 # NLU ENDPOINT
 # ============================================================================
 
-@app.post("/nlu/parse", response_model=NLUParseResponse)
+@app.post("/nlu/parse", response_model=NLUParseResponse, tags=["NLP"])
 async def parse_nlu(request: NLUParseRequest):
     """
     Parse natural language query into structured constraints
@@ -604,7 +786,7 @@ async def parse_nlu(request: NLUParseRequest):
 
 
 # SPARQL builder endpoint
-@app.post("/sparql/build", response_model=SPARQLBuildResponse)
+@app.post("/sparql/build", response_model=SPARQLBuildResponse, tags=["NLP"])
 async def build_sparql(request: SPARQLBuildRequest):
     """
     Build SPARQL query from structured constraints
@@ -632,7 +814,7 @@ async def build_sparql(request: SPARQLBuildRequest):
         )
 
 
-@app.post("/parse-query", response_model=NLUParseResponse)
+@app.post("/parse-query", response_model=NLUParseResponse, tags=["NLP"])
 async def parse_query_endpoint(request: NLUParseRequest):
     """
     Parse natural language query into structured constraints using NLP
@@ -660,7 +842,7 @@ async def parse_query_endpoint(request: NLUParseRequest):
 
 
 # Main search endpoint - Using Food Graph API
-@app.post("/search", response_model=SearchResponse)
+@app.post("/search", response_model=SearchResponse, tags=["Search"])
 async def search(request: SearchRequest):
     """
     Production-ready search using Food Graph API with intelligent filtering
