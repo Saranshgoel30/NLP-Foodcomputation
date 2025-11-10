@@ -1,0 +1,26 @@
+{
+  "name": "nlp-foodcomputation",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Saranshgoel30/NLP-Foodcomputation.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Saranshgoel30/NLP-Foodcomputation/issues"
+  },
+  "homepage": "https://github.com/Saranshgoel30/NLP-Foodcomputation#readme",
+  "dependencies": {
+    "next": "^16.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  }
+}
