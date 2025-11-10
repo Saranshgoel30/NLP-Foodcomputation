@@ -14,22 +14,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Format request according to FastAPI SearchRequest model
+    const searchRequest = {
+      query: {
+        text: query,
+        lang: language,
+        constraints: filters || null
+      }
+    };
+
+    console.log('Sending to backend:', searchRequest);
+
     // Forward to backend FastAPI server
-    const response = await fetch(`${BACKEND_URL}/api/search`, {
+    const response = await fetch(`${BACKEND_URL}/search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        query,
-        language,
-        limit,
-        filters,
-      }),
+      body: JSON.stringify(searchRequest),
     });
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('Backend error:', error);
       return NextResponse.json(
         { error: error.detail || 'Search failed' },
         { status: response.status }
@@ -37,7 +44,18 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    console.log('Backend response:', data);
+    
+    // Map FastAPI response (results) to frontend format (recipes)
+    const mappedResponse = {
+      recipes: data.results || [],
+      total: data.count || 0,
+      query: data.query,
+      translatedQuery: data.translatedQuery,
+      processing_time: data.durationMs
+    };
+    
+    return NextResponse.json(mappedResponse);
   } catch (error) {
     console.error('Search error:', error);
     return NextResponse.json(
@@ -61,21 +79,26 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Format request according to FastAPI SearchRequest model
+    const searchRequest = {
+      query: {
+        text: query,
+        lang: language
+      }
+    };
+
     // Forward to backend FastAPI server
-    const response = await fetch(`${BACKEND_URL}/api/search`, {
+    const response = await fetch(`${BACKEND_URL}/search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        query,
-        language,
-        limit,
-      }),
+      body: JSON.stringify(searchRequest),
     });
 
     if (!response.ok) {
       const error = await response.json();
+      console.error('Backend error:', error);
       return NextResponse.json(
         { error: error.detail || 'Search failed' },
         { status: response.status }
@@ -83,7 +106,18 @@ export async function GET(request: NextRequest) {
     }
 
     const data = await response.json();
-    return NextResponse.json(data);
+    console.log('Backend response (GET):', data);
+    
+    // Map FastAPI response (results) to frontend format (recipes)
+    const mappedResponse = {
+      recipes: data.results || [],
+      total: data.count || 0,
+      query: data.query,
+      translatedQuery: data.translatedQuery,
+      processing_time: data.durationMs
+    };
+    
+    return NextResponse.json(mappedResponse);
   } catch (error) {
     console.error('Search error:', error);
     return NextResponse.json(

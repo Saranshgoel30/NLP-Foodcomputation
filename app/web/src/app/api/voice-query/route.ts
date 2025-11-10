@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     backendFormData.append('audio', audioBlob);
     backendFormData.append('language', language as string);
 
-    const response = await fetch(`${BACKEND_URL}/api/stt`, {
+    const response = await fetch(`${BACKEND_URL}/stt`, {
       method: 'POST',
       body: backendFormData,
     });
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const data = await response.json();
     
     // Now search with the transcribed text
-    const searchResponse = await fetch(`${BACKEND_URL}/api/search`, {
+    const searchResponse = await fetch(`${BACKEND_URL}/search`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

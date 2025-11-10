@@ -5,7 +5,7 @@ Uses rule-based extraction with patterns for Indian food queries
 import re
 from typing import List, Tuple, Optional
 import structlog
-from models import QueryConstraints, Language
+from .models import QueryConstraints, Language
 
 logger = structlog.get_logger()
 

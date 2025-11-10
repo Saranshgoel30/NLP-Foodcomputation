@@ -5,8 +5,8 @@ Handles SPARQL queries with authentication, timeouts, and retry logic
 import httpx
 from typing import List, Dict, Any, Optional
 import structlog
-from config import Settings
-from models import Recipe
+from .config import Settings
+from .models import Recipe
 
 logger = structlog.get_logger()
 

@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Forward to backend FastAPI server
-    const response = await fetch(`${BACKEND_URL}/api/recipes/${id}`, {
+    const response = await fetch(`${BACKEND_URL}/recipes/${id}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',

@@ -40,67 +40,67 @@ export default function ModernRecipeCard({ recipe, onClick }: ModernRecipeCardPr
   return (
     <div
       onClick={onClick}
-      className="group relative bg-white rounded-lg border border-gray-200 hover:border-orange-600 hover:shadow-lg transition-all duration-200 overflow-hidden cursor-pointer"
+      className="group relative bg-white rounded-lg border-2 border-gray-200 hover:border-orange-500 hover:shadow-xl transition-all duration-200 overflow-hidden cursor-pointer"
     >
-      {/* Image Section */}
-      <div className="relative h-48 overflow-hidden bg-gray-100">
-        {recipe.image && !imageError ? (
-          <img
-            src={recipe.image}
-            alt={recipe.title}
-            onError={() => setImageError(true)}
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <ChefHat className="w-20 h-20 text-orange-300" />
+      {/* Header with Icon and Like Button - No Image */}
+      <div className="relative bg-gradient-to-br from-orange-50 to-red-50 p-6">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-xl bg-white shadow-md">
+              <ChefHat className="w-8 h-8 text-orange-500" />
+            </div>
+            <div>
+              {recipe.cuisine && (
+                <span className="px-3 py-1 rounded-full bg-white text-orange-600 text-xs font-semibold shadow-sm">
+                  {recipe.cuisine}
+                </span>
+              )}
+            </div>
           </div>
-        )}
-        
-        {/* Overlay Gradient */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent"></div>
+          
+          {/* Like Button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setIsLiked(!isLiked)
+            }}
+            className={cn(
+              "p-2 rounded-full transition-all shadow-md",
+              isLiked 
+                ? "bg-red-500 text-white scale-110" 
+                : "bg-white text-gray-600 hover:scale-110"
+            )}
+          >
+            <Heart
+              className={cn("w-5 h-5", isLiked && "fill-current")}
+            />
+          </button>
+        </div>
 
         {/* Badges */}
-        <div className="absolute top-3 left-3 flex gap-2">
+        <div className="flex flex-wrap gap-2 mt-4">
           {recipe.isPopular && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-500 text-white text-xs font-semibold shadow-lg">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-orange-500 text-white text-xs font-semibold shadow-sm">
               <Flame className="w-3 h-3" />
               Popular
             </span>
           )}
           {recipe.isTrending && (
-            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-500 text-white text-xs font-semibold shadow-lg">
+            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-500 text-white text-xs font-semibold shadow-sm">
               <TrendingUp className="w-3 h-3" />
               Trending
             </span>
           )}
+          {recipe.diet && recipe.diet.map((diet, index) => (
+            <span
+              key={index}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-green-500 text-white text-xs font-semibold shadow-sm"
+            >
+              <Leaf className="w-3 h-3" />
+              {diet}
+            </span>
+          ))}
         </div>
-
-        {/* Like Button */}
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            setIsLiked(!isLiked)
-          }}
-          className={cn(
-            "absolute top-3 right-3 p-2 rounded-full backdrop-blur-md transition-all",
-            isLiked 
-              ? "bg-red-500 text-white scale-110" 
-              : "bg-white/90 text-gray-600 hover:bg-white hover:scale-110"
-          )}
-        >
-          <Heart
-            className={cn("w-5 h-5", isLiked && "fill-current")}
-          />
-        </button>
-
-        {/* Rating */}
-        {recipe.rating && (
-          <div className="absolute bottom-3 left-3 flex items-center gap-1 px-3 py-1 rounded-full bg-white/95 backdrop-blur-sm shadow-lg">
-            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-            <span className="font-bold text-gray-900">{recipe.rating.toFixed(1)}</span>
-          </div>
-        )}
       </div>
 
       {/* Content Section */}
