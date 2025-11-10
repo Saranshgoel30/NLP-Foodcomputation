@@ -61,11 +61,13 @@ class Recipe(BaseModel):
     diet: Optional[str] = None
     servings: Optional[str | int] = None
     ingredients: Optional[List[str]] = None
-    instructions: Optional[str] = None
+    instructions: Optional[List[str]] = None  # Changed from str to List[str] for step-by-step
     difficulty: Optional[str] = None
     cookTime: Optional[str] = None
     totalTime: Optional[str] = None
+    prepTime: Optional[str] = None  # Added prepTime field
     score: Optional[float] = None
+    nutrition: Optional[Dict[str, Any]] = None  # Added nutrition dict
     
     # Enrichment fields (added by Food Graph API integration)
     nutrition: Optional[NutritionInfo] = Field(None, description="Nutrition data from Food Graph API")

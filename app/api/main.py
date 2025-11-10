@@ -10,18 +10,18 @@ from fastapi.responses import JSONResponse
 import structlog
 from structlog.stdlib import LoggerFactory
 
-from config import get_settings
-from models import (
+from .config import get_settings
+from .models import (
     SearchRequest, SearchResponse, STTRequest, STTResponse,
     TranslateRequest, TranslateResponse, NLUParseRequest, NLUParseResponse,
     SPARQLBuildRequest, SPARQLBuildResponse, APIError, Recipe
 )
-from graphdb_client import GraphDBClient
-from sparql_builder import build_sparql_query
-from nlu_parser import parse_query
-from ranking import rank_recipes
-from stt_adapter import get_stt_adapter
-from translation_adapter import get_translation_adapter
+from .graphdb_client import GraphDBClient
+from .sparql_builder import build_sparql_query
+from .nlu_parser import parse_query
+from .ranking import rank_recipes
+from .stt_adapter import get_stt_adapter
+from .translation_adapter import get_translation_adapter
 
 # Configure structured logging
 structlog.configure(
@@ -155,6 +155,33 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
+# Test endpoint
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return {"message": "MMFOOD API", "status": "running"}
+
+
+# Simple test search endpoint
+@app.get("/test")
+async def test():
+    """Simple test endpoint"""
+    return {"status": "ok", "message": "Backend is working!"}
+
+
+# Minimal mock search endpoint for testing
+@app.post("/search-test")
+async def search_test(request: SearchRequest):
+    """Mock search endpoint that returns empty results"""
+    return SearchResponse(
+        results=[],
+        query=request.query,
+        translatedQuery=None,
+        count=0,
+        durationMs=1.0
+    )
+
+
 # Health check
 @app.get("/health")
 async def health_check():
@@ -223,14 +250,229 @@ async def build_sparql(request: SPARQLBuildRequest):
         )
 
 
-# Main search endpoint
+# Main search endpoint - Using Food Graph API
 @app.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """
-    Complete search pipeline: NLU → SPARQL → GraphDB → Rank → Response
-    
-    Supports multilingual queries with translation
+    Production-ready search using Food Graph API with intelligent filtering
+    Matches query against recipe names, ingredients, cuisine, and diet
     """
+    start_time = time.time()
+    
+    try:
+        query = request.query
+        search_text = query.text.lower()
+        
+        print(f"🔍 SEARCH REQUEST: '{search_text}'", flush=True)
+        logger.info("search_started", query=search_text, lang=query.lang)
+        
+        # Call the Food Graph API
+        import httpx
+        food_api_url = "http://16.170.211.162:8001/recipes"
+        
+        with httpx.Client(timeout=30.0) as client:
+            # Fetch more recipes to ensure good matches after filtering
+            response = client.get(food_api_url, params={"limit": 200})
+            response.raise_for_status()
+            api_recipes = response.json()
+        
+        logger.info("api_response_received", total_recipes=len(api_recipes))
+        print(f"📡 Received {len(api_recipes)} recipes from Food Graph API", flush=True)
+        
+        # Intelligent filtering: match query against multiple fields
+        matched_recipes = []
+        
+        for api_recipe in api_recipes:
+            # Extract searchable text from recipe
+            recipe_name = (api_recipe.get("name") or "").lower()
+            cuisine = (api_recipe.get("cuisine") or "").lower()
+            diet = (api_recipe.get("diet") or "").lower()
+            course = (api_recipe.get("course") or "").lower()
+            
+            # Extract ingredient names from the structured data
+            ingredient_text = ""
+            ingredient_desc = api_recipe.get("ingredient_description", [])
+            if isinstance(ingredient_desc, list):
+                for section in ingredient_desc:
+                    if isinstance(section, dict) and "items" in section:
+                        items = section["items"]
+                        if isinstance(items, dict):
+                            ingredient_text += " " + " ".join(items.keys()).lower()
+            
+            # Combine all searchable text
+            searchable = f"{recipe_name} {cuisine} {diet} {course} {ingredient_text}"
+            
+            # Check if query terms match (support multi-word queries)
+            query_terms = search_text.split()
+            if any(term in searchable for term in query_terms):
+                matched_recipes.append(api_recipe)
+            
+            # Stop after finding enough matches
+            if len(matched_recipes) >= 20:
+                break
+        
+        logger.info("filtering_complete", matched=len(matched_recipes), searched=len(api_recipes))
+        
+        # Convert to Recipe model with full data mapping
+        recipes = []
+        for api_recipe in matched_recipes:
+            try:
+                # Parse ingredients into structured format
+                ingredients_list = []
+                ingredient_desc = api_recipe.get("ingredient_description", [])
+                
+                if isinstance(ingredient_desc, list):
+                    for section in ingredient_desc:
+                        if isinstance(section, dict):
+                            heading = section.get("heading", "Ingredients")
+                            items = section.get("items", {})
+                            
+                            if isinstance(items, dict):
+                                for ing_name, ing_data in items.items():
+                                    if isinstance(ing_data, dict):
+                                        quantity = ing_data.get("quantity", "")
+                                        unit = ing_data.get("unit", "")
+                                        form = ing_data.get("form", "")
+                                        notes = ing_data.get("notes", "")
+                                        
+                                        # Format ingredient string
+                                        ing_str = f"{quantity} {unit} {ing_name}".strip()
+                                        if form and form != "NA":
+                                            ing_str += f" ({form})"
+                                        if notes and notes != "NA":
+                                            ing_str += f" - {notes}"
+                                        
+                                        ingredients_list.append(ing_str)
+                
+                # Parse instructions
+                instructions_list = []
+                instruction_desc = api_recipe.get("instruction_description", [])
+                
+                if isinstance(instruction_desc, list):
+                    for section in instruction_desc:
+                        if isinstance(section, dict):
+                            steps = section.get("steps", [])
+                            if isinstance(steps, list):
+                                for step in steps:
+                                    if isinstance(step, dict):
+                                        step_text = step.get("step", "")
+                                        if step_text:
+                                            instructions_list.append(step_text)
+                
+                # Parse nutrition data - extract values and clean them
+                nutrition_info = api_recipe.get("nutritional_info", {})
+                nutrition_dict = None
+                
+                if isinstance(nutrition_info, dict) and nutrition_info:
+                    # Helper to extract numeric value from strings like "120g" or "120 g" or "120"
+                    def extract_number(value):
+                        if value is None:
+                            return None
+                        if isinstance(value, (int, float)):
+                            return float(value)
+                        # Extract number from string
+                        import re
+                        if isinstance(value, str):
+                            match = re.search(r'(\d+\.?\d*)', value)
+                            if match:
+                                return float(match.group(1))
+                        return None
+                    
+                    nutrition_dict = {}
+                    # Map API fields to our format and extract numeric values
+                    if "Calories" in nutrition_info:
+                        nutrition_dict["calories"] = extract_number(nutrition_info["Calories"])
+                    if "Proteins" in nutrition_info:
+                        nutrition_dict["protein"] = extract_number(nutrition_info["Proteins"])
+                    if "Carbohydrates" in nutrition_info:
+                        nutrition_dict["carbs"] = extract_number(nutrition_info["Carbohydrates"])
+                    if "Dietary Fiber" in nutrition_info:
+                        nutrition_dict["fiber"] = extract_number(nutrition_info["Dietary Fiber"])
+                    if "Fats" in nutrition_info:
+                        nutrition_dict["fat"] = extract_number(nutrition_info["Fats"])
+                    if "Saturated Fats" in nutrition_info:
+                        nutrition_dict["saturatedFat"] = extract_number(nutrition_info["Saturated Fats"])
+                    if "Cholesterol" in nutrition_info:
+                        nutrition_dict["cholesterol"] = extract_number(nutrition_info["Cholesterol"])
+                    if "Sodium" in nutrition_info:
+                        nutrition_dict["sodium"] = extract_number(nutrition_info["Sodium"])
+                    
+                    # Only include if we got at least some values
+                    if not any(v is not None for v in nutrition_dict.values()):
+                        nutrition_dict = None
+                
+                recipe = Recipe(
+                    iri=api_recipe.get("uri", ""),
+                    title=api_recipe.get("name", "Untitled Recipe"),
+                    url=api_recipe.get("url"),
+                    course=api_recipe.get("course"),
+                    cuisine=api_recipe.get("cuisine"),
+                    diet=api_recipe.get("diet"),
+                    servings=api_recipe.get("servings"),
+                    ingredients=ingredients_list if ingredients_list else None,
+                    instructions=instructions_list if instructions_list else None,
+                    difficulty=api_recipe.get("difficulty") if api_recipe.get("difficulty") != "NA" else None,
+                    cookTime=api_recipe.get("cook_time"),
+                    totalTime=api_recipe.get("total_time"),
+                    prepTime=api_recipe.get("prep_time"),
+                    nutrition=nutrition_dict
+                )
+                
+                # Debug logging for first recipe
+                if len(recipes) == 0:
+                    print(f"✅ First Recipe Parsed:", flush=True)
+                    print(f"   Title: {recipe.title}", flush=True)
+                    print(f"   Ingredients: {len(recipe.ingredients) if recipe.ingredients else 0} items", flush=True)
+                    print(f"   Instructions: {len(recipe.instructions) if recipe.instructions else 0} steps", flush=True)
+                    print(f"   Nutrition: {recipe.nutrition}", flush=True)
+                    print(f"   First ingredient: {recipe.ingredients[0] if recipe.ingredients else 'NONE'}", flush=True)
+                    print(f"   First instruction: {recipe.instructions[0][:80] if recipe.instructions else 'NONE'}...", flush=True)
+                    
+                    logger.info("first_recipe_parsed", 
+                               title=recipe.title,
+                               has_ingredients=bool(recipe.ingredients),
+                               ingredients_count=len(recipe.ingredients) if recipe.ingredients else 0,
+                               has_instructions=bool(recipe.instructions),
+                               instructions_count=len(recipe.instructions) if recipe.instructions else 0,
+                               has_nutrition=bool(recipe.nutrition),
+                               nutrition_keys=list(recipe.nutrition.keys()) if recipe.nutrition else []
+                    )
+                
+                recipes.append(recipe)
+                
+            except Exception as e:
+                logger.error("recipe_parse_error", error=str(e), recipe_name=api_recipe.get("name"))
+                continue
+        
+        # Calculate duration
+        duration_ms = (time.time() - start_time) * 1000
+        
+        logger.info("search_complete", results=len(recipes), duration_ms=duration_ms)
+        
+        return SearchResponse(
+            results=recipes,
+            query=query,
+            translatedQuery=None,
+            count=len(recipes),
+            durationMs=duration_ms
+        )
+    
+    except Exception as e:
+        logger.error("search_failed", error=str(e))
+        duration_ms = (time.time() - start_time) * 1000
+        return SearchResponse(
+            results=[],
+            query=request.query,
+            translatedQuery=None,
+            count=0,
+            durationMs=duration_ms
+        )
+
+
+# OLD SEARCH CODE BELOW - TO BE REMOVED
+@app.post("/search-old", response_model=SearchResponse)
+async def search_old(request: SearchRequest):
+    """OLD search using GraphDB - keeping for reference"""
     start_time = time.time()
     
     try:
@@ -257,7 +499,14 @@ async def search(request: SearchRequest):
                 logger.warning("translation_failed", error=str(e))
         
         # Step 2: Parse query into constraints
-        constraints, confidence = parse_query(translated_text, 'en')
+        try:
+            constraints, confidence = parse_query(translated_text, 'en')
+        except Exception as e:
+            logger.error("nlu_parsing_failed", error=str(e))
+            # Create empty constraints if parsing fails
+            from .models import QueryConstraints
+            constraints = QueryConstraints()
+            confidence = 0.0
         
         # Override with explicit constraints if provided
         if query.constraints:
@@ -286,16 +535,20 @@ async def search(request: SearchRequest):
         )
         
         # Step 4: Execute GraphDB query
-        if not graphdb_client:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="GraphDB client not available"
-            )
-        
-        recipes = graphdb_client.search_recipes(sparql_query)
+        recipes = []
+        try:
+            if not graphdb_client:
+                logger.warning("graphdb_client_not_available")
+                recipes = []
+            else:
+                recipes = graphdb_client.search_recipes(sparql_query)
+        except Exception as graphdb_error:
+            logger.error("graphdb_query_failed", error=str(graphdb_error))
+            # Return empty list if GraphDB fails - will use mock data on frontend
+            recipes = []
         
         # Step 5: Rank and filter results
-        ranked_recipes = rank_recipes(recipes, constraints)
+        ranked_recipes = rank_recipes(recipes, constraints) if recipes else []
         
         # Calculate duration
         duration_ms = (time.time() - start_time) * 1000

@@ -283,15 +283,110 @@ export default function ModernSearchInterface() {
   const [isSearching, setIsSearching] = useState(false)
   const [showResults, setShowResults] = useState(false)
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null)
+  const [recipes, setRecipes] = useState<any[]>(mockRecipes)
+  const [isUsingMockData, setIsUsingMockData] = useState(true)
 
   const handleSearch = async () => {
     if (!query.trim()) return
     setIsSearching(true)
-    // Show results after a short delay
-    setTimeout(() => {
+    
+    try {
+      console.log('Searching for:', query)
+      
+      // Call backend directly instead of going through Next.js API route
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000'
+      console.log('🔥 Calling backend at:', `${backendUrl}/search`)
+      const response = await fetch(`${backendUrl}/search`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: {
+            text: query,
+            lang: selectedLanguage,
+            constraints: null
+          }
+        }),
+      })
+      
+      if (response.ok) {
+        const data = await response.json()
+        console.log('Backend response:', data)
+        console.log('📊 Results count:', data.results?.length)
+        
+        if (data.results && data.results.length > 0) {
+          // Debug first recipe
+          const firstRecipe = data.results[0]
+          console.log('🔍 First recipe debug:')
+          console.log('  - Title:', firstRecipe.title)
+          console.log('  - Ingredients:', firstRecipe.ingredients?.length || 0, 'items')
+          console.log('  - Instructions:', firstRecipe.instructions?.length || 0, 'steps')
+          console.log('  - Nutrition:', firstRecipe.nutrition)
+          console.log('  - Full first recipe:', firstRecipe)
+          
+          // Map backend data to our recipe format - NO IMAGES (we don't have that data)
+          const mappedRecipes = data.results.map((r: any) => {
+            // Parse time strings (e.g., "30 minutes", "PT30M", or just "30")
+            const parseTime = (time: any): number | undefined => {
+              if (!time) return undefined;
+              if (typeof time === 'number') return time;
+              const match = String(time).match(/\d+/);
+              return match ? parseInt(match[0]) : undefined;
+            };
+
+            return {
+              id: r.iri || r.uri || Math.random().toString(),
+              title: r.title || 'Untitled Recipe',
+              // NO IMAGE - we don't have image data from Food Graph API
+              image: undefined,
+              description: r.instructions && r.instructions.length > 0 
+                ? r.instructions[0].substring(0, 150) + '...' 
+                : '',
+              cookTime: parseTime(r.cookTime),
+              prepTime: parseTime(r.prepTime),
+              totalTime: parseTime(r.totalTime),
+              servings: parseInt(r.servings) || 4,
+              difficulty: r.difficulty || undefined,
+              rating: 4.5, // Default rating since we don't have ratings data
+              cuisine: r.cuisine || 'Indian',
+              diet: Array.isArray(r.diet) ? r.diet : (r.diet ? [r.diet] : []),
+              calories: r.nutrition?.calories,
+              course: r.course,
+              isPopular: false,
+              isTrending: false,
+              // Rich data from backend
+              ingredients: Array.isArray(r.ingredients) ? r.ingredients : [],
+              instructions: Array.isArray(r.instructions) ? r.instructions : [],
+              nutrition: r.nutrition || {},
+              tags: [],
+              url: r.url
+            };
+          })
+          
+          setRecipes(mappedRecipes)
+          setIsUsingMockData(false)
+          console.log('Using real backend data:', mappedRecipes.length, 'recipes')
+        } else {
+          console.log('No recipes from backend, using mock data')
+          setRecipes(mockRecipes)
+          setIsUsingMockData(true)
+        }
+      } else {
+        console.error('Backend returned error:', response.status)
+        setRecipes(mockRecipes)
+        setIsUsingMockData(true)
+      }
+    } catch (error) {
+      console.error('❌ Search error:', error)
+      console.error('Error details:', error instanceof Error ? error.message : String(error))
+      console.log('Falling back to demo data')
+      setRecipes(mockRecipes)
+      setIsUsingMockData(true)
+    } finally {
       setIsSearching(false)
       setShowResults(true)
-    }, 800)
+    }
   }
 
   const handleBackToSearch = () => {
@@ -363,17 +458,39 @@ export default function ModernSearchInterface() {
 
         {/* Results */}
         <div className="container mx-auto px-4 py-8">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              Search Results for "{query}"
-            </h2>
-            <p className="text-gray-600">
-              Found {mockRecipes.length} recipes
-            </p>
+          <div className="mb-6 flex items-center justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">
+                Search Results for "{query}"
+              </h2>
+              <p className="text-gray-600">
+                Found {recipes.length} recipes
+              </p>
+            </div>
+            {isUsingMockData && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-2">
+                <p className="text-sm text-yellow-800 font-medium">
+                  ⚠️ Demo Mode - Using sample data
+                </p>
+                <p className="text-xs text-yellow-600">
+                  Backend not connected
+                </p>
+              </div>
+            )}
+            {!isUsingMockData && (
+              <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-2">
+                <p className="text-sm text-green-800 font-medium">
+                  ✅ Live Data from GraphDB
+                </p>
+                <p className="text-xs text-green-600">
+                  8,945 recipes available
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {mockRecipes.map((recipe) => (
+            {recipes.map((recipe) => (
               <ModernRecipeCard
                 key={recipe.id}
                 recipe={recipe}

@@ -4,7 +4,7 @@ Builds precise queries with strict filtering to minimize false positives
 Uses patterns from MMFOOD reference queries
 """
 from typing import List, Optional, Dict, Any
-from models import QueryConstraints
+from .models import QueryConstraints
 import re
 
 

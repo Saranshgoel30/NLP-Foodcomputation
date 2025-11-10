@@ -5,7 +5,7 @@ Prioritizes exact matches and relevance
 """
 from typing import List
 import structlog
-from models import Recipe, QueryConstraints
+from .models import Recipe, QueryConstraints
 
 logger = structlog.get_logger()
 

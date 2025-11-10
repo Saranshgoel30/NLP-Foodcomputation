@@ -6,7 +6,7 @@ import json
 from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
 import structlog
-from models import Language
+from .models import Language
 
 logger = structlog.get_logger()
 
