@@ -15,14 +15,6 @@ class Settings(BaseSettings):
         case_sensitive=False
     )
     
-    # GraphDB
-    graphdb_url: str = "http://16.170.211.162:7200"
-    graphdb_repository: str = "mmfood_hackathon"
-    graphdb_named_graph: str = "http://172.31.34.244/fkg"
-    graphdb_username: str = ""
-    graphdb_password: str = ""
-    graphdb_timeout: int = 30  # Increased to 30 seconds for complex queries
-    
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
@@ -38,15 +30,15 @@ class Settings(BaseSettings):
     stt_model_name: str = 'small'
     stt_model_path: str = ""
     
-    # Typesense (Vector Search)
+    # Typesense (Primary Search Engine)
     typesense_host: str = "localhost"
     typesense_port: int = 8108
     typesense_protocol: str = "http"
     typesense_api_key: str = "xyz"
-    typesense_enabled: bool = False  # Enable when Typesense is set up
+    typesense_enabled: bool = True  # Typesense is the primary search engine
     
     # Search Strategy
-    search_strategy: Literal['graphdb', 'typesense', 'hybrid'] = 'graphdb'  # Can switch to 'hybrid' later
+    search_strategy: Literal['semantic', 'keyword', 'hybrid'] = 'hybrid'
     hybrid_semantic_weight: float = 0.7  # Weight for semantic vs keyword in hybrid mode
     
     # Redis
@@ -59,13 +51,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_format: Literal['json', 'console'] = 'json'
     
-    # External APIs
-    existing_api_base: str = "http://16.170.211.162:8001"
-    food_graph_api: str = "http://16.170.211.162:8002"
-    
-    # Food Graph API (Nutrition & Ingredients)
-    food_graph_api_url: str = "http://16.170.211.162:8001"
-    food_graph_api_key: str = ""  # Optional, only for admin endpoints
+    # External APIs (Optional - for future enrichment)
+    food_graph_api_url: str = ""
+    food_graph_api_key: str = ""
     
     # Feature Flags
     enable_nutrition_enrichment: bool = True
