@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     graphdb_named_graph: str = "http://172.31.34.244/fkg"
     graphdb_username: str = ""
     graphdb_password: str = ""
-    graphdb_timeout: int = 6
+    graphdb_timeout: int = 30  # Increased to 30 seconds for complex queries
     
     # API
     api_host: str = "0.0.0.0"

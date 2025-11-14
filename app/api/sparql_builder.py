@@ -4,13 +4,14 @@ Builds precise queries with strict filtering to minimize false positives
 Uses patterns from MMFOOD reference queries
 """
 from typing import List, Optional, Dict, Any
-from .models import QueryConstraints
+from models import QueryConstraints
 import re
 
 
 # Namespace prefixes for MMFOOD
+# Using the actual namespace from GraphDB (not foodkg ontology)
 PREFIXES = """
-PREFIX fkg: <http://purl.org/foodkg#>
+PREFIX : <http://172.31.34.244/fkg#>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 """
@@ -69,7 +70,7 @@ def build_ingredient_includes(ingredients: List[str]) -> List[str]:
         ingredient_escaped = escape_sparql_string(ingredient.lower())
         var_name = f"ingredient{i}"
         patterns.append(f"""
-  ?recipe fkg:hasActualIngredients ?{var_name} .
+  ?recipe :hasActualIngredients ?{var_name} .
   FILTER(CONTAINS(LCASE(STR(?{var_name})), "{ingredient_escaped}"))""")
     return patterns
 
@@ -84,7 +85,7 @@ def build_ingredient_excludes(ingredients: List[str]) -> List[str]:
         ingredient_escaped = escape_sparql_string(ingredient.lower())
         patterns.append(f"""
   FILTER NOT EXISTS {{
-    ?recipe fkg:hasActualIngredients ?excludeIng .
+    ?recipe :hasActualIngredients ?excludeIng .
     FILTER(CONTAINS(LCASE(STR(?excludeIng)), "{ingredient_escaped}"))
   }}""")
     return patterns
@@ -102,7 +103,7 @@ def build_cuisine_filter(cuisines: List[str]) -> str:
     
     cuisine_filter = " || ".join(cuisine_conditions)
     return f"""
-  ?recipe fkg:hasCuisine ?cuisine .
+  ?recipe :hasCuisine ?cuisine .
   FILTER({cuisine_filter})"""
 
 
@@ -118,7 +119,7 @@ def build_diet_filter(diets: List[str]) -> str:
     
     diet_filter = " || ".join(diet_conditions)
     return f"""
-  ?recipe fkg:hasDiet ?diet .
+  ?recipe :hasDiet ?diet .
   FILTER({diet_filter})"""
 
 
@@ -134,7 +135,7 @@ def build_course_filter(courses: List[str]) -> str:
     
     course_filter = " || ".join(course_conditions)
     return f"""
-  ?recipe fkg:hasCourse ?course .
+  ?recipe :hasCourse ?course .
   FILTER({course_filter})"""
 
 
@@ -147,7 +148,7 @@ def build_time_filter(max_cook: Optional[int], max_total: Optional[int]) -> str:
     
     if max_cook is not None:
         patterns.append(f"""
-  OPTIONAL {{ ?recipe fkg:hasCookTime ?cookTime . }}
+  OPTIONAL {{ ?recipe :hasCookTime ?cookTime . }}
   BIND(
     IF(BOUND(?cookTime),
        xsd:integer(REPLACE(LCASE(STR(?cookTime)), "[^0-9]", "")),
@@ -158,7 +159,7 @@ def build_time_filter(max_cook: Optional[int], max_total: Optional[int]) -> str:
     
     if max_total is not None:
         patterns.append(f"""
-  OPTIONAL {{ ?recipe fkg:hasTotalTime ?totalTime . }}
+  OPTIONAL {{ ?recipe :hasTotalTime ?totalTime . }}
   BIND(
     IF(BOUND(?totalTime),
        xsd:integer(REPLACE(LCASE(STR(?totalTime)), "[^0-9]", "")),
@@ -185,7 +186,7 @@ def build_keyword_filter(keywords: List[str]) -> str:
     
     keyword_filter = " || ".join(keyword_conditions)
     return f"""
-  ?recipe fkg:hasInstructions ?instructions .
+  ?recipe :hasInstructions ?instructions .
   FILTER({keyword_filter})"""
 
 
@@ -213,17 +214,17 @@ def build_projection() -> str:
 def build_optional_fields() -> str:
     """Build OPTIONAL patterns for all recipe fields"""
     return """
-  OPTIONAL { ?recipe fkg:hasRecipeTitle ?titleVal . }
-  OPTIONAL { ?recipe fkg:hasRecipeURL ?urlVal . }
-  OPTIONAL { ?recipe fkg:hasCourse ?courseVal . }
-  OPTIONAL { ?recipe fkg:hasCuisine ?cuisineVal . }
-  OPTIONAL { ?recipe fkg:hasDiet ?dietVal . }
-  OPTIONAL { ?recipe fkg:hasServings ?servingsVal . }
-  OPTIONAL { ?recipe fkg:hasActualIngredients ?ingredientVal . }
-  OPTIONAL { ?recipe fkg:hasInstructions ?instructionsVal . }
-  OPTIONAL { ?recipe fkg:hasDifficulty ?difficultyVal . }
-  OPTIONAL { ?recipe fkg:hasCookTime ?cookTimeVal . }
-  OPTIONAL { ?recipe fkg:hasTotalTime ?totalTimeVal . }
+  OPTIONAL { ?recipe :hasRecipeTitle ?titleVal . }
+  OPTIONAL { ?recipe :hasRecipeURL ?urlVal . }
+  OPTIONAL { ?recipe :hasCourse ?courseVal . }
+  OPTIONAL { ?recipe :hasCuisine ?cuisineVal . }
+  OPTIONAL { ?recipe :hasDiet ?dietVal . }
+  OPTIONAL { ?recipe :hasServings ?servingsVal . }
+  OPTIONAL { ?recipe :hasActualIngredients ?ingredientVal . }
+  OPTIONAL { ?recipe :hasInstructions ?instructionsVal . }
+  OPTIONAL { ?recipe :hasDifficulty ?difficultyVal . }
+  OPTIONAL { ?recipe :hasCookTime ?cookTimeVal . }
+  OPTIONAL { ?recipe :hasTotalTime ?totalTimeVal . }
 """
 
 
@@ -249,11 +250,12 @@ def build_sparql_query(
     parts = [PREFIXES]
     parts.append(f"\nSELECT DISTINCT")
     parts.append(build_projection())
-    parts.append(f"FROM <{named_graph}>")
+    parts.append(f"FROM <{named_graph}>\n")
     parts.append("WHERE {")
     
     # Recipe type pattern (all recipes)
-    parts.append("\n  ?recipe rdf:type fkg:Recipe .")
+    # Note: The class is FoodRecipes not Recipe in MMFOOD ontology
+    parts.append("\n  ?recipe rdf:type :FoodRecipes .")
     
     # Add includes (ingredients that must be present)
     if constraints.include:

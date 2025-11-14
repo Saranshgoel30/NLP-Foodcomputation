@@ -6,8 +6,8 @@ import base64
 import io
 import structlog
 from typing import Tuple
-from .config import Settings
-from .models import Language
+from config import Settings
+from models import Language
 
 logger = structlog.get_logger()
 

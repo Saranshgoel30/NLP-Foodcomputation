@@ -5,8 +5,8 @@ Includes culinary terminology table for consistency
 """
 import structlog
 from typing import Dict, Tuple
-from .config import Settings
-from .models import Language
+from config import Settings
+from models import Language
 
 logger = structlog.get_logger()
 

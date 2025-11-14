@@ -4,9 +4,9 @@ Enriches recipes from GraphDB with nutrition data from Food Graph API
 """
 from typing import List, Optional, Dict, Any
 import structlog
-from .models import Recipe, NutritionInfo, EnhancedIngredient
-from .food_graph_client import FoodGraphClient
-from .config import settings
+from models import Recipe, NutritionInfo, EnhancedIngredient
+from food_graph_client import FoodGraphClient
+from config import settings
 
 logger = structlog.get_logger()
 
