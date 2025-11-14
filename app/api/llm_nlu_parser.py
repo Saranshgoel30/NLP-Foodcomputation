@@ -6,7 +6,7 @@ import re
 import json
 from typing import Dict, List, Optional, Tuple, Any
 import structlog
-from .models import QueryConstraints, Language
+from models import QueryConstraints, Language
 
 logger = structlog.get_logger()
 

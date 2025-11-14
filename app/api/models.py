@@ -61,7 +61,7 @@ class Recipe(BaseModel):
     diet: Optional[str] = None
     servings: Optional[str | int] = None
     ingredients: Optional[List[str]] = None
-    instructions: Optional[List[str]] = None  # Changed from str to List[str] for step-by-step
+    instructions: Optional[str | List[str]] = None  # Accept both string and list from GraphDB
     difficulty: Optional[str] = None
     cookTime: Optional[str] = None
     totalTime: Optional[str] = None

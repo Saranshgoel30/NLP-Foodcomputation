@@ -5,7 +5,7 @@ Integrates with the MongoDB-backed nutrition and ingredient API
 import httpx
 from typing import Dict, List, Any, Optional
 import structlog
-from .config import settings
+from config import settings
 
 logger = structlog.get_logger()
 

@@ -6,10 +6,10 @@ import os
 from typing import Optional
 import structlog
 
-from .llm_nlu_parser import get_llm_parser, LLMNLUParser
-from .enhanced_stt import get_enhanced_stt, get_multichannel_stt
-from .llm_translation import get_translator, TranslationProvider
-from .models import Language, QueryConstraints
+from llm_nlu_parser import get_llm_parser, LLMNLUParser
+from enhanced_stt import get_enhanced_stt, get_multichannel_stt
+from llm_translation import get_translator, TranslationProvider
+from models import Language, QueryConstraints
 
 logger = structlog.get_logger()
 
