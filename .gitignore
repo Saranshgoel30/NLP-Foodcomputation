@@ -1,91 +1,202 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-.env
-.venv
+# Python# Python
+
+__pycache__/__pycache__/
+
+*.py[cod]*.py[cod]
+
+*$py.class*$py.class
+
+*.so*.so
+
+.Python.Python
+
+build/build/
+
+develop-eggs/develop-eggs/
+
+dist/dist/
+
+downloads/downloads/
+
+eggs/eggs/
+
+.eggs/.eggs/
+
+lib/lib/
+
+lib64/lib64/
+
+parts/parts/
+
+sdist/sdist/
+
+var/var/
+
+wheels/wheels/
+
+*.egg-info/*.egg-info/
+
+.installed.cfg.installed.cfg
+
+*.egg*.egg
+
+MANIFESTMANIFEST
+
+*.log.env
+
+.pytest_cache/.venv
+
 env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+
+# Virtual Environmentvenv/
+
+venv/ENV/
+
+env/env.bak/
+
+ENV/venv.bak/
+
+.venv
 
 # Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+
+# Environment Variablesnode_modules/
+
+.envnpm-debug.log*
+
+.env.localyarn-debug.log*
+
+.env.*.localyarn-error.log*
+
 .pnpm-debug.log*
-.next/
-out/
-build/
-.npm
-.eslintcache
-.node_repl_history
-*.tgz
+
+# IDEs.next/
+
+.vscode/out/
+
+.idea/build/
+
+*.swp.npm
+
+*.swo.eslintcache
+
+*~.node_repl_history
+
+.DS_Store*.tgz
+
 .yarn-integrity
 
-# Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+# Node.js / Frontend
 
-# IDEs
-.vscode/
+node_modules/# Environment variables
+
+.next/.env
+
+out/.env.local
+
+build/.env.development.local
+
+.turbo/.env.test.local
+
+npm-debug.log*.env.production.local
+
+yarn-debug.log*
+
+yarn-error.log*# IDEs
+
+.pnpm-debug.log*.vscode/
+
 .idea/
-*.swp
-*.swo
-*~
+
+# Next.js*.swp
+
+.next/*.swo
+
+next-env.d.ts*~
+
 .DS_Store
 
-# Testing
+# TypeScript
+
+*.tsbuildinfo# Testing
+
 .coverage
-.pytest_cache/
-htmlcov/
-.tox/
+
+# Testing.pytest_cache/
+
+coverage/htmlcov/
+
+.nyc_output/.tox/
+
 .hypothesis/
-coverage/
+
+# Typesense Datacoverage/
+
+typesense-data/
 
 # Logs
-*.log
-logs/
 
-# Models and data (large files)
-*.h5
-*.pkl
+# Docker*.log
+
+*.loglogs/
+
+
+
+# OS# Models and data (large files)
+
+Thumbs.db*.h5
+
+.DS_Store*.pkl
+
 *.model
-*.bin
-models/
-data/
 
-# Docker
+# Temporary files*.bin
+
+*.tmpmodels/
+
+*.tempdata/
+
+temp/
+
+tmp/# Docker
+
 .dockerignore
 
-# OS
-Thumbs.db
-.DS_Store
+# Model files (large)
+
+*.bin# OS
+
+*.onnxThumbs.db
+
+*.pb.DS_Store
+
+models/
 
 # Temporary files
-*.tmp
+
+# Data files*.tmp
+
+*.csv*.bak
+
+*.json.gz*.orig
+
+*.parquet
+
+# Backup files
 *.bak
-*.orig
+*.backup
+*~
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Redis
+dump.rdb
+
+# Test results
+test_results.json
+
+# Package-lock (keep only in subdirectories)
+/package-lock.json
+/package.json

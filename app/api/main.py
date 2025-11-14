@@ -17,10 +17,6 @@ from models import (
     SPARQLBuildRequest, SPARQLBuildResponse, APIError, Recipe
 )
 from graphdb_client import GraphDBClient
-from sparql_builder import build_sparql_query
-from nlu_parser import parse_query
-from ranking import rank_recipes
-from stt_adapter import get_stt_adapter
 from translation_adapter import get_translation_adapter
 
 # Configure structured logging
@@ -43,9 +39,20 @@ structlog.configure(
 
 logger = structlog.get_logger()
 
+# Import TypesenseClient with lazy loading
+try:
+    from typesense_client import TypesenseClient
+    TYPESENSE_AVAILABLE = True
+    logger.info("typesense_client_imported")
+except Exception as e:
+    TypesenseClient = None
+    TYPESENSE_AVAILABLE = False
+    logger.warning("typesense_import_failed", error=str(e))
+
 # Global instances
 settings = get_settings()
 graphdb_client = None
+typesense_client = None
 stt_adapter = None
 translation_adapter = None
 
@@ -53,7 +60,7 @@ translation_adapter = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown"""
-    global graphdb_client, stt_adapter, translation_adapter
+    global graphdb_client, typesense_client, stt_adapter, translation_adapter
     
     # Startup
     logger.info("mmfood_api_starting", version="1.0.0")
@@ -64,11 +71,29 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("failed_to_init_graphdb", error=str(e))
     
-    try:
-        stt_adapter = get_stt_adapter(settings)
-        logger.info("stt_adapter_initialized", provider=settings.stt_provider)
-    except Exception as e:
-        logger.warning("stt_adapter_init_failed", error=str(e))
+    # Initialize Typesense if enabled and available
+    if settings.typesense_enabled and TYPESENSE_AVAILABLE and TypesenseClient:
+        try:
+            typesense_client = TypesenseClient(
+                host=settings.typesense_host,
+                port=settings.typesense_port,
+                api_key=settings.typesense_api_key,
+                collection_name='food_ingredients_v1',  # Using the indexed collection
+                enable_redis=False  # Disable Redis for now
+            )
+            logger.info("typesense_client_initialized", 
+                       strategy=settings.search_strategy,
+                       collection='food_ingredients_v1')
+        except Exception as e:
+            logger.warning("typesense_init_failed", error=str(e))
+            logger.info("falling_back_to_graphdb_only")
+    
+    # STT adapter not needed for current implementation
+    # try:
+    #     stt_adapter = get_stt_adapter(settings)
+    #     logger.info("stt_adapter_initialized", provider=settings.stt_provider)
+    # except Exception as e:
+    #     logger.warning("stt_adapter_init_failed", error=str(e))
     
     try:
         translation_adapter = get_translation_adapter(settings)
@@ -163,64 +188,33 @@ async def health_check():
         "status": "healthy",
         "version": "1.0.0",
         "graphdb": "connected" if graphdb_client else "unavailable",
+        "typesense": "connected" if typesense_client else ("disabled" if not settings.typesense_enabled else "unavailable"),
+        "search_strategy": settings.search_strategy,
         "stt": "available" if stt_adapter else "unavailable",
         "translation": "available" if translation_adapter else "unavailable"
     }
 
 
-# NLU endpoint
-@app.post("/nlu/parse", response_model=NLUParseResponse)
-async def parse_nlu(request: NLUParseRequest):
-    """
-    Parse natural language query into structured constraints
-    
-    Example:
-        Input: "give me Chinese chicken recipe under 30 minutes"
-        Output: constraints with cuisine=['Chinese'], include=['chicken'], maxCookMinutes=30
-    """
-    try:
-        constraints, confidence = parse_query(request.text, request.lang)
-        
-        return NLUParseResponse(
-            constraints=constraints,
-            confidence=confidence,
-            originalText=request.text
-        )
-    except Exception as e:
-        logger.error("nlu_parse_failed", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"NLU parsing failed: {str(e)}"
-        )
+# NLU and SPARQL endpoints - DEPRECATED (using Typesense now)
+# @app.post("/nlu/parse", response_model=NLUParseResponse)
+# async def parse_nlu(request: NLUParseRequest):
+#     """
+#     Parse natural language query into structured constraints
+#     """
+#     raise HTTPException(
+#         status_code=status.HTTP_410_GONE,
+#         detail="NLU endpoint deprecated. Use /search endpoint directly."
+#     )
 
-
-# SPARQL builder endpoint
-@app.post("/sparql/build", response_model=SPARQLBuildResponse)
-async def build_sparql(request: SPARQLBuildRequest):
-    """
-    Build SPARQL query from structured constraints
-    
-    Example:
-        Input: constraints with include=['chicken'], exclude=['banana']
-        Output: Complete SPARQL query string
-    """
-    try:
-        sparql = build_sparql_query(
-            request.constraints,
-            limit=50,
-            named_graph=settings.graphdb_named_graph
-        )
-        
-        return SPARQLBuildResponse(
-            sparql=sparql,
-            params=None
-        )
-    except Exception as e:
-        logger.error("sparql_build_failed", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"SPARQL build failed: {str(e)}"
-        )
+# @app.post("/sparql/build", response_model=SPARQLBuildResponse)
+# async def build_sparql(request: SPARQLBuildRequest):
+#     """
+#     Build SPARQL query from structured constraints
+#     """
+#     raise HTTPException(
+#         status_code=status.HTTP_410_GONE,
+#         detail="SPARQL builder deprecated. Use /search endpoint with Typesense."
+#     )
 
 
 # Main search endpoint
@@ -262,10 +256,14 @@ async def search(request: SearchRequest):
         else:
             logger.info("translation_skipped", duration_ms=(time.time() - step1_start) * 1000)
         
-        # Step 2: Parse query into constraints
+        # Step 2: Simple constraints (parse_query not needed for Typesense)
         step2_start = time.time()
-        constraints, confidence = parse_query(translated_text, 'en')
-        logger.info("query_parsed", constraints=str(constraints), confidence=confidence, duration_ms=(time.time() - step2_start) * 1000)
+        # constraints, confidence = parse_query(translated_text, 'en')
+        # For now, use empty constraints
+        from models import SearchConstraints
+        constraints = SearchConstraints() if not query.constraints else query.constraints
+        confidence = 1.0
+        logger.info("constraints_ready", duration_ms=(time.time() - step2_start) * 1000)
         
         # Override with explicit constraints if provided
         if query.constraints:
@@ -286,32 +284,110 @@ async def search(request: SearchRequest):
             if query.constraints.keywords:
                 constraints.keywords = query.constraints.keywords
         
-        # Step 3: Build SPARQL query
+        # Step 3: Choose search strategy
         step3_start = time.time()
-        sparql_query = build_sparql_query(
-            constraints,
-            limit=50,
-            named_graph=settings.graphdb_named_graph
-        )
-        logger.info("sparql_built", query_length=len(sparql_query), duration_ms=(time.time() - step3_start) * 1000)
-        logger.info("sparql_query", query=sparql_query[:500])  # Log first 500 chars
+        recipes = []
         
-        # Step 4: Execute GraphDB query
-        step4_start = time.time()
-        if not graphdb_client:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="GraphDB client not available"
+        if settings.search_strategy == 'typesense' and typesense_client:
+            # Pure Typesense semantic search
+            logger.info("using_typesense_search")
+            
+            # Build filter string for Typesense
+            filter_parts = []
+            if constraints.cuisine:
+                filter_parts.append(f"cuisine:={constraints.cuisine}")
+            if constraints.diet:
+                filter_parts.append(f"diet:={constraints.diet}")
+            filter_str = ' && '.join(filter_parts) if filter_parts else None
+            
+            # Perform search
+            result = typesense_client.semantic_search(
+                translated_text,
+                limit=50,
+                filters=filter_str
             )
+            
+            # Convert Typesense results to Recipe objects
+            recipes = []
+            for hit in result.get('hits', []):
+                doc = hit['document']
+                recipes.append(Recipe(
+                    iri=doc.get('id', ''),
+                    title=doc.get('name', ''),
+                    cuisine=doc.get('cuisine'),
+                    diet=doc.get('diet'),
+                    course=doc.get('course'),
+                    ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
+                    instructions=doc.get('description')
+                ))
+            
+            logger.info("typesense_search_completed", recipe_count=len(recipes), duration_ms=(time.time() - step3_start) * 1000)
+            
+        elif settings.search_strategy == 'hybrid' and typesense_client:
+            # Hybrid: Typesense semantic + keyword
+            logger.info("using_hybrid_search", semantic_weight=settings.hybrid_semantic_weight)
+            
+            # Build filter string
+            filter_parts = []
+            if constraints.cuisine:
+                filter_parts.append(f"cuisine:={constraints.cuisine}")
+            if constraints.diet:
+                filter_parts.append(f"diet:={constraints.diet}")
+            filter_str = ' && '.join(filter_parts) if filter_parts else None
+            
+            # Perform hybrid search
+            result = typesense_client.hybrid_search(
+                translated_text,
+                limit=50,
+                semantic_weight=settings.hybrid_semantic_weight,
+                filters=filter_str
+            )
+            
+            # Convert Typesense results to Recipe objects
+            recipes = []
+            for hit in result.get('hits', []):
+                doc = hit['document']
+                recipes.append(Recipe(
+                    iri=doc.get('id', ''),
+                    title=doc.get('name', ''),
+                    cuisine=doc.get('cuisine'),
+                    diet=doc.get('diet'),
+                    course=doc.get('course'),
+                    ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
+                    instructions=doc.get('description')
+                ))
+            
+            logger.info("hybrid_search_completed", recipe_count=len(recipes), duration_ms=(time.time() - step3_start) * 1000)
+            
+        else:
+            # Default: Use GraphDB or Typesense
+            logger.info("using_default_search")
+            
+            if typesense_client:
+                # Fall back to Typesense semantic search
+                result = typesense_client.semantic_search(translated_text, limit=50)
+                for hit in result.get('hits', []):
+                    doc = hit['document']
+                    recipes.append(Recipe(
+                        iri=doc.get('id', ''),
+                        title=doc.get('name', ''),
+                        cuisine=doc.get('cuisine'),
+                        diet=doc.get('diet'),
+                        course=doc.get('course'),
+                        ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
+                        instructions=doc.get('description')
+                    ))
+                logger.info("fallback_search_completed", recipe_count=len(recipes))
+            else:
+                # No search available
+                logger.warning("no_search_backend_available")
+                recipes = []
         
-        logger.info("graphdb_query_starting")
-        recipes = graphdb_client.search_recipes(sparql_query)
-        logger.info("graphdb_query_completed", recipe_count=len(recipes), duration_ms=(time.time() - step4_start) * 1000)
-        
-        # Step 5: Rank and filter results
-        step5_start = time.time()
-        ranked_recipes = rank_recipes(recipes, constraints)
-        logger.info("ranking_completed", ranked_count=len(ranked_recipes), duration_ms=(time.time() - step5_start) * 1000)
+        # Step 4: Results already ranked by Typesense
+        step4_start = time.time()
+        # Hybrid/semantic search already ranked
+        ranked_recipes = recipes
+        logger.info("results_ready", count=len(recipes), duration_ms=(time.time() - step4_start) * 1000)
         
         # Calculate duration
         duration_ms = (time.time() - start_time) * 1000
@@ -341,45 +417,16 @@ async def search(request: SearchRequest):
         )
 
 
-# STT endpoint
-@app.post("/stt", response_model=STTResponse)
-async def speech_to_text(request: STTRequest):
-    """
-    Convert audio to text using Whisper/Vosk
-    
-    Supports multiple Indian languages
-    """
-    if not stt_adapter:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="STT service not available"
-        )
-    
-    try:
-        transcript, confidence, detected_lang = stt_adapter.transcribe(
-            request.audio,
-            request.format or 'webm'
-        )
-        
-        logger.info(
-            "stt_completed",
-            transcript_length=len(transcript),
-            confidence=confidence,
-            lang=detected_lang
-        )
-        
-        return STTResponse(
-            transcript=transcript,
-            confidence=confidence,
-            lang=detected_lang
-        )
-        
-    except Exception as e:
-        logger.error("stt_failed", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Speech-to-text failed: {str(e)}"
-        )
+# STT endpoint - DEPRECATED
+# @app.post("/stt", response_model=STTResponse)
+# async def speech_to_text(request: STTRequest):
+#     """
+#     Convert audio to text using Whisper/Vosk
+#     """
+#     raise HTTPException(
+#         status_code=status.HTTP_410_GONE,
+#         detail="STT endpoint deprecated. Frontend should implement speech recognition directly."
+#     )
 
 
 # Translation endpoint
@@ -431,6 +478,6 @@ if __name__ == "__main__":
         "main:app",
         host=settings.api_host,
         port=settings.api_port,
-        reload=settings.api_reload,
+        reload=False,  # Disabled due to ML library loading issues
         log_level=settings.log_level.lower()
     )

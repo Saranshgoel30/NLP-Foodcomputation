@@ -38,6 +38,17 @@ class Settings(BaseSettings):
     stt_model_name: str = 'small'
     stt_model_path: str = ""
     
+    # Typesense (Vector Search)
+    typesense_host: str = "localhost"
+    typesense_port: int = 8108
+    typesense_protocol: str = "http"
+    typesense_api_key: str = "xyz"
+    typesense_enabled: bool = False  # Enable when Typesense is set up
+    
+    # Search Strategy
+    search_strategy: Literal['graphdb', 'typesense', 'hybrid'] = 'graphdb'  # Can switch to 'hybrid' later
+    hybrid_semantic_weight: float = 0.7  # Weight for semantic vs keyword in hybrid mode
+    
     # Redis
     redis_url: str = "redis://localhost:6379/0"
     
