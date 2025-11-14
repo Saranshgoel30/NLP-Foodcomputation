@@ -323,12 +323,6 @@ async def search(request: SearchRequest):
             duration_ms=duration_ms
         )
         
-        # Debug: Check titles before returning
-        if ranked_recipes:
-            logger.info("sample_recipe_titles", 
-                       first_title=ranked_recipes[0].title if ranked_recipes else "N/A",
-                       first_iri=ranked_recipes[0].iri[:100] if ranked_recipes else "N/A")
-        
         return SearchResponse(
             results=ranked_recipes,
             query=query,

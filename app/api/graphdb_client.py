@@ -120,12 +120,6 @@ class GraphDBClient:
                 
                 # Extract title from binding, or derive from IRI if not present
                 title = binding.get("title", {}).get("value")
-                logger.info("title_extraction_debug", 
-                           has_title_key="title" in binding,
-                           title_value=title,
-                           title_is_none=title is None,
-                           iri=iri[:100])
-                
                 if not title:
                     # Extract title from IRI (after the # fragment)
                     # E.g., http://172.31.34.244/fkg#Grilled%20Peri%20Peri%20Paneer%20Recipe
@@ -133,7 +127,6 @@ class GraphDBClient:
                         title = unquote(iri.split("#")[-1])
                     else:
                         title = unquote(iri.split("/")[-1])
-                    logger.info("extracted_title_from_iri", title=title)
                 
                 # Parse ingredients (pipe-separated in GROUP_CONCAT)
                 ingredients_str = binding.get("ingredients", {}).get("value", "")
