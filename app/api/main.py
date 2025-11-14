@@ -16,7 +16,6 @@ from models import (
     TranslateRequest, TranslateResponse, NLUParseRequest, NLUParseResponse,
     SPARQLBuildRequest, SPARQLBuildResponse, APIError, Recipe
 )
-from graphdb_client import GraphDBClient
 from translation_adapter import get_translation_adapter
 
 # Configure structured logging
@@ -51,25 +50,17 @@ except Exception as e:
 
 # Global instances
 settings = get_settings()
-graphdb_client = None
 typesense_client = None
-stt_adapter = None
 translation_adapter = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown"""
-    global graphdb_client, typesense_client, stt_adapter, translation_adapter
+    global typesense_client, translation_adapter
     
     # Startup
-    logger.info("mmfood_api_starting", version="1.0.0")
-    
-    try:
-        graphdb_client = GraphDBClient(settings)
-        logger.info("graphdb_client_initialized")
-    except Exception as e:
-        logger.error("failed_to_init_graphdb", error=str(e))
+    logger.info("mmfood_api_starting", version="1.0.0", focus="typesense")
     
     # Initialize Typesense if enabled and available
     if settings.typesense_enabled and TYPESENSE_AVAILABLE and TypesenseClient:
@@ -85,8 +76,8 @@ async def lifespan(app: FastAPI):
                        strategy=settings.search_strategy,
                        collection='food_ingredients_v1')
         except Exception as e:
-            logger.warning("typesense_init_failed", error=str(e))
-            logger.info("falling_back_to_graphdb_only")
+            logger.error("typesense_init_failed", error=str(e))
+            logger.warning("search_unavailable_without_typesense")
     
     # STT adapter not needed for current implementation
     # try:
@@ -107,8 +98,6 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("mmfood_api_shutting_down")
-    if graphdb_client:
-        graphdb_client.close()
     logger.info("mmfood_api_stopped")
 
 
@@ -186,11 +175,10 @@ async def health_check():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "version": "1.0.0",
-        "graphdb": "connected" if graphdb_client else "unavailable",
+        "version": "2.0.0",
+        "focus": "typesense",
         "typesense": "connected" if typesense_client else ("disabled" if not settings.typesense_enabled else "unavailable"),
         "search_strategy": settings.search_strategy,
-        "stt": "available" if stt_adapter else "unavailable",
         "translation": "available" if translation_adapter else "unavailable"
     }
 
@@ -221,9 +209,9 @@ async def health_check():
 @app.post("/search", response_model=SearchResponse)
 async def search(request: SearchRequest):
     """
-    Complete search pipeline: NLU → SPARQL → GraphDB → Rank → Response
+    Typesense-powered search with multilingual support
     
-    Supports multilingual queries with translation
+    Search pipeline: Translation → Typesense (hybrid/semantic/keyword) → Response
     """
     start_time = time.time()
     
@@ -360,28 +348,28 @@ async def search(request: SearchRequest):
             logger.info("hybrid_search_completed", recipe_count=len(recipes), duration_ms=(time.time() - step3_start) * 1000)
             
         else:
-            # Default: Use GraphDB or Typesense
-            logger.info("using_default_search")
+            # Typesense is required
+            if not typesense_client:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="Typesense search service is not available"
+                )
             
-            if typesense_client:
-                # Fall back to Typesense semantic search
-                result = typesense_client.semantic_search(translated_text, limit=50)
-                for hit in result.get('hits', []):
-                    doc = hit['document']
-                    recipes.append(Recipe(
-                        iri=doc.get('id', ''),
-                        title=doc.get('name', ''),
-                        cuisine=doc.get('cuisine'),
-                        diet=doc.get('diet'),
-                        course=doc.get('course'),
-                        ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
-                        instructions=doc.get('description')
-                    ))
-                logger.info("fallback_search_completed", recipe_count=len(recipes))
-            else:
-                # No search available
-                logger.warning("no_search_backend_available")
-                recipes = []
+            # Use Typesense semantic search as default
+            logger.info("using_semantic_search")
+            result = typesense_client.semantic_search(translated_text, limit=50)
+            for hit in result.get('hits', []):
+                doc = hit['document']
+                recipes.append(Recipe(
+                    iri=doc.get('id', ''),
+                    title=doc.get('name', ''),
+                    cuisine=doc.get('cuisine'),
+                    diet=doc.get('diet'),
+                    course=doc.get('course'),
+                    ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
+                    instructions=doc.get('description')
+                ))
+            logger.info("semantic_search_completed", recipe_count=len(recipes))
         
         # Step 4: Results already ranked by Typesense
         step4_start = time.time()
