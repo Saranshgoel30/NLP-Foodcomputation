@@ -156,9 +156,14 @@ Now analyze the given query and return JSON with the same structure."""
         
         return self._rule_based_understanding(query)
     
-    async def translate_query(self, query: str, target_language: str = "English") -> str:
+    async def translate_query(self, query: str, target_language: str = "English", custom_prompt: str = None) -> str:
         """
         Translate query to target language with food context preservation
+        
+        Args:
+            query: The query to translate
+            target_language: Target language for translation
+            custom_prompt: Optional custom prompt with better context
         """
         # Check cache
         cache_key = self._get_cache_key(f"{query}:{target_language}", "translate")
@@ -169,7 +174,14 @@ Now analyze the given query and return JSON with the same structure."""
         if not self.provider:
             return query  # No translation without LLM
         
-        user_prompt = f"""Translate this recipe query to {target_language}.
+        # Use custom prompt if provided, otherwise use default
+        if custom_prompt:
+            user_prompt = custom_prompt
+            messages = [
+                {"role": "user", "content": user_prompt}
+            ]
+        else:
+            user_prompt = f"""Translate this recipe query to {target_language}.
 Preserve ingredient names and provide alternatives in parentheses.
 
 Query: "{query}"
@@ -177,11 +189,11 @@ Query: "{query}"
 Target Language: {target_language}
 
 Return only the translated text, nothing else."""
-        
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPTS["translation"]},
-            {"role": "user", "content": user_prompt}
-        ]
+            
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPTS["translation"]},
+                {"role": "user", "content": user_prompt}
+            ]
         
         response = await self._call_llm(messages, temperature=0.2)
         

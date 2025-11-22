@@ -6,6 +6,7 @@ from typing import Dict, List, Any, Optional
 import asyncio
 from .llm_service import llm_service
 from .query_parser import QueryParser
+from .translation_helper import translator
 
 
 class EnhancedQueryParser:
@@ -58,15 +59,43 @@ class EnhancedQueryParser:
             return result
     
     async def translate_to_english(self, query: str) -> str:
-        """Translate non-English query to English"""
-        if not self.use_llm:
+        """
+        Translate non-English query to English with semantic understanding
+        Uses hybrid approach: rule-based translation + LLM refinement
+        """
+        # Step 1: Use rule-based semantic translation
+        semantic_result = translator.semantic_translation(query)
+        
+        print(f"\n🌍 Semantic Translation:")
+        print(f"  Language Detected: {semantic_result['detected_language']}")
+        print(f"  Rule-based Translation: {semantic_result['translated_query']}")
+        print(f"  Excluded Ingredients: {semantic_result['excluded_ingredients']}")
+        
+        # If already English and no complex negations, return as-is
+        if semantic_result['detected_language'] == 'English' and not semantic_result['excluded_ingredients']:
             return query
         
-        try:
-            return await self.llm_service.translate_query(query, "English")
-        except Exception as e:
-            print(f"⚠️  Translation failed: {e}")
-            return query
+        # Step 2: Use LLM for refinement if available
+        if self.use_llm:
+            try:
+                # Generate context-aware prompt
+                llm_prompt = translator.get_translation_prompt(query)
+                llm_translation = await self.llm_service.translate_query(
+                    query, 
+                    "English",
+                    custom_prompt=llm_prompt
+                )
+                
+                print(f"  LLM Refinement: {llm_translation}")
+                
+                # Use LLM result if it's significantly different and better
+                if llm_translation and llm_translation.lower() != query.lower():
+                    return llm_translation
+            except Exception as e:
+                print(f"  ⚠️  LLM refinement failed: {e}")
+        
+        # Fallback to rule-based translation
+        return semantic_result['translated_query']
     
     async def translate_from_english(self, text: str, target_language: str) -> str:
         """Translate English text to target language"""

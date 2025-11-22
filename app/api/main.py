@@ -40,15 +40,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Lazy initialization of search client (loads heavy embedding model only when needed)
+# Lazy initialization of search client (only when first search request arrives)
+# This allows LLM features to work immediately while search loads in background
 client = None
+client_loading = False
 
-def get_search_client():
-    """Lazy load search client to avoid blocking LLM features"""
-    global client
-    if client is None:
-        print("📦 Loading Typesense search client (first time only)...")
+async def get_search_client():
+    """Lazily initialize search client on first use"""
+    global client, client_loading
+    
+    if client is not None:
+        return client
+    
+    if not client_loading:
+        client_loading = True
+        print("📦 Initializing Typesense search client...")
         client = SearchClient()
+        print("✅ Typesense search client ready!")
+    
     return client
 
 # Response Models
@@ -145,8 +154,8 @@ async def search_recipes(
         # Use the English translated query for better search results
         search_query = translated_query
         
-        # Get search client (lazy loaded)
-        search_client = get_search_client()
+        # Get search client (lazy loads on first use)
+        search_client = await get_search_client()
         
         # Use smart filtering with LLM-extracted ingredients
         results = search_client.search(
@@ -160,10 +169,14 @@ async def search_recipes(
         
         duration = (time.time() - start) * 1000  # Convert to ms
         
+        # Return with translation info for UI display
         return {
             "hits": results['hits'],
             "found": results['found'],
             "query": q,
+            "translated_query": translated_query if translated_query != q else None,
+            "detected_language": parsed.get('language_detected'),
+            "llm_enabled": enhanced_parser.use_llm,
             "duration_ms": round(duration, 2)
         }
     except Exception as e:
@@ -182,7 +195,7 @@ async def autocomplete_query(
     - **limit**: Number of suggestions (default: 5, max: 10)
     """
     try:
-        search_client = get_search_client()
+        search_client = await get_search_client()
         suggestions = search_client.autocomplete_query(q, limit=limit)
         return {
             "suggestions": [hit['document']['query'] for hit in suggestions]
@@ -202,7 +215,7 @@ async def lookup_ingredient(
     - **limit**: Number of results (default: 3, max: 10)
     """
     try:
-        search_client = get_search_client()
+        search_client = await get_search_client()
         results = search_client.autocomplete_ingredient(q, limit=limit)
         return {
             "results": [hit['document'] for hit in results]

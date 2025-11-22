@@ -31,6 +31,9 @@ interface SearchResult {
   found: number
   query: string
   duration_ms: number
+  translated_query?: string
+  detected_language?: string
+  llm_enabled?: boolean
 }
 
 export default function Home() {
@@ -115,11 +118,50 @@ export default function Home() {
             {/* Results */}
             {!loading && results && (
               <div>
-                <div className="mb-6 p-4 bg-white rounded-lg shadow-sm border border-gray-200">
-                  <p className="text-lg font-semibold text-gray-800">
-                    📊 Found <span className="text-purple-600">{results.found}</span> recipes 
-                    in <span className="text-purple-600">{results.duration_ms}ms</span>
-                  </p>
+                {/* Query Understanding Card */}
+                <div className="mb-6 space-y-4">
+                  {/* Translation Info */}
+                  {results.translated_query && results.translated_query !== results.query && (
+                    <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg shadow-sm border-2 border-green-200">
+                      <div className="flex items-start gap-3">
+                        <Globe className="w-6 h-6 text-green-600 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800 mb-2">
+                            🌍 Multilingual Query Detected
+                          </p>
+                          <div className="space-y-1 text-sm">
+                            <p className="text-gray-700">
+                              <span className="font-medium">Original:</span> "{results.query}"
+                            </p>
+                            <p className="text-gray-700">
+                              <span className="font-medium">Translated to English:</span> "{results.translated_query}"
+                            </p>
+                            {results.detected_language && (
+                              <p className="text-xs text-gray-600 mt-2">
+                                Language detected: <span className="font-semibold">{results.detected_language}</span>
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Results Summary */}
+                  <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <p className="text-lg font-semibold text-gray-800">
+                        📊 Found <span className="text-purple-600">{results.found}</span> recipes 
+                        in <span className="text-purple-600">{results.duration_ms}ms</span>
+                      </p>
+                      {results.llm_enabled && (
+                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-100 to-blue-100 rounded-full">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                          <span className="text-xs font-semibold text-purple-700">AI-Powered Search</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -148,10 +190,12 @@ export default function Home() {
                   {[
                     '🚫 Butter chicken without onions and tomatoes',
                     '⚡ Quick pasta under 20 minutes',
-                    '🥗 Salad no cheese',
+                    '🥗 Jain recipes (no onion no garlic)',
                     '🌶️ Spicy curry with garlic and ginger',
-                    '� Chocolate dessert without eggs',
-                    '� Sabzi excluding potatoes'
+                    '🥞 Chocolate dessert without eggs',
+                    '🇮🇳 कांदा नसलेली पनीर भाजी',
+                    '🍛 pyaz ke bina dal recipe',
+                    '🔥 bina tamatar ka chicken'
                   ].map((example, i) => (
                     <button
                       key={i}
