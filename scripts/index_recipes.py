@@ -1,0 +1,71 @@
+"""
+Indexer Script.
+Reads from data/updated_recipes.jsonl and indexes to Typesense using the SearchClient.
+"""
+
+import sys
+import os
+import json
+import time
+from typing import List, Dict, Any
+
+# Add parent dir to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from app.api.search_client import SearchClient
+
+DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'updated_recipes.jsonl')
+
+def load_recipes_generator(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():
+                yield json.loads(line)
+
+def transform(item):
+    # The JSONL data is already in a good format, just need to ensure types
+    return {
+        'name': item.get('name'),
+        'description': item.get('description', ''),
+        'ingredients': item.get('ingredients', []),
+        'cuisine': item.get('cuisine'),
+        'course': item.get('course'),
+        'diet': item.get('diet'),
+        'difficulty': item.get('difficulty'),
+        'prep_time': int(item.get('prep_time')) if item.get('prep_time') else 0,
+        'cook_time': int(item.get('cook_time')) if item.get('cook_time') else 0,
+        'total_time': int(item.get('total_time')) if item.get('total_time') else 0,
+        'servings': int(item.get('servings')) if str(item.get('servings')).isdigit() else 4,
+        'url': item.get('url')
+    }
+
+def main():
+    print("Initializing Search Client...")
+    client = SearchClient()
+    client.ensure_collection()
+    
+    print(f"Reading from {DATA_FILE}...")
+    
+    batch_size = 500
+    batch = []
+    count = 0
+    
+    for raw_item in load_recipes_generator(DATA_FILE):
+        doc = transform(raw_item)
+        if doc:
+            batch.append(doc)
+            
+        if len(batch) >= batch_size:
+            client.index_documents(batch)
+            count += len(batch)
+            print(f"Indexed {count} recipes...")
+            batch = []
+            
+    if batch:
+        client.index_documents(batch)
+        count += len(batch)
+        
+    print(f"Done! Total indexed: {count}")
+
+if __name__ == "__main__":
+    main()

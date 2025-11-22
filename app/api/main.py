@@ -1,471 +1,151 @@
 """
-Main FastAPI Application for MMFOOD
-Multilingual + Multimodal Food Knowledge Search
+FastAPI Backend for Food Intelligence Platform
+Provides REST APIs for search, autocomplete, and suggestions
 """
-import time
-from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request, status
+
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-import structlog
-from structlog.stdlib import LoggerFactory
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
+import sys
+import os
+import time
 
-from config import get_settings
-from models import (
-    SearchRequest, SearchResponse, STTRequest, STTResponse,
-    TranslateRequest, TranslateResponse, NLUParseRequest, NLUParseResponse,
-    SPARQLBuildRequest, SPARQLBuildResponse, APIError, Recipe
-)
-from translation_adapter import get_translation_adapter
+# Add parent dir to path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# Configure structured logging
-structlog.configure(
-    processors=[
-        structlog.stdlib.filter_by_level,
-        structlog.stdlib.add_logger_name,
-        structlog.stdlib.add_log_level,
-        structlog.stdlib.PositionalArgumentsFormatter(),
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.StackInfoRenderer(),
-        structlog.processors.format_exc_info,
-        structlog.processors.UnicodeDecoder(),
-        structlog.processors.JSONRenderer()
-    ],
-    context_class=dict,
-    logger_factory=LoggerFactory(),
-    cache_logger_on_first_use=True,
-)
+from app.api.search_client import SearchClient
 
-logger = structlog.get_logger()
-
-# Import TypesenseClient with lazy loading
-try:
-    from typesense_client import TypesenseClient
-    TYPESENSE_AVAILABLE = True
-    logger.info("typesense_client_imported")
-except Exception as e:
-    TypesenseClient = None
-    TYPESENSE_AVAILABLE = False
-    logger.warning("typesense_import_failed", error=str(e))
-
-# Global instances
-settings = get_settings()
-typesense_client = None
-translation_adapter = None
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifespan: startup and shutdown"""
-    global typesense_client, translation_adapter
-    
-    # Startup
-    logger.info("mmfood_api_starting", version="1.0.0", focus="typesense")
-    
-    # Initialize Typesense if enabled and available
-    if settings.typesense_enabled and TYPESENSE_AVAILABLE and TypesenseClient:
-        try:
-            typesense_client = TypesenseClient(
-                host=settings.typesense_host,
-                port=settings.typesense_port,
-                api_key=settings.typesense_api_key,
-                collection_name='food_ingredients_v1',  # Using the indexed collection
-                enable_redis=False  # Disable Redis for now
-            )
-            logger.info("typesense_client_initialized", 
-                       strategy=settings.search_strategy,
-                       collection='food_ingredients_v1')
-        except Exception as e:
-            logger.error("typesense_init_failed", error=str(e))
-            logger.warning("search_unavailable_without_typesense")
-    
-    # STT adapter not needed for current implementation
-    # try:
-    #     stt_adapter = get_stt_adapter(settings)
-    #     logger.info("stt_adapter_initialized", provider=settings.stt_provider)
-    # except Exception as e:
-    #     logger.warning("stt_adapter_init_failed", error=str(e))
-    
-    try:
-        translation_adapter = get_translation_adapter(settings)
-        logger.info("translation_adapter_initialized", provider=settings.translation_provider)
-    except Exception as e:
-        logger.warning("translation_adapter_init_failed", error=str(e))
-    
-    logger.info("mmfood_api_started")
-    
-    yield
-    
-    # Shutdown
-    logger.info("mmfood_api_shutting_down")
-    logger.info("mmfood_api_stopped")
-
-
-# Create FastAPI app
 app = FastAPI(
-    title="MMFOOD API",
-    description="Multilingual + Multimodal Food Knowledge Search",
-    version="1.0.0",
-    lifespan=lifespan
+    title="Food Intelligence API",
+    description="Semantic search API for recipes with autocomplete",
+    version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:8501"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Initialize search client
+client = SearchClient()
 
-# Request timing middleware
-@app.middleware("http")
-async def add_timing(request: Request, call_next):
-    """Add request timing to response headers"""
-    start_time = time.time()
-    response = await call_next(request)
-    duration = (time.time() - start_time) * 1000  # ms
-    response.headers["X-Process-Time"] = str(duration)
-    logger.info(
-        "request_completed",
-        method=request.method,
-        path=request.url.path,
-        duration_ms=duration
-    )
-    return response
+# Response Models
+class SearchResponse(BaseModel):
+    hits: List[Dict[str, Any]]
+    found: int
+    query: str
+    duration_ms: float
 
+class AutocompleteResponse(BaseModel):
+    suggestions: List[str]
 
-# Exception handlers
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle HTTP exceptions"""
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=APIError(
-            error="HTTPException",
-            message=exc.detail,
-            code=str(exc.status_code)
-        ).model_dump()
-    )
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    search_engine: str
 
-
-@app.exception_handler(Exception)
-async def general_exception_handler(request: Request, exc: Exception):
-    """Handle unexpected exceptions"""
-    logger.error(
-        "unhandled_exception",
-        error=str(exc),
-        path=request.url.path,
-        exc_info=True
-    )
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=APIError(
-            error="InternalServerError",
-            message="An unexpected error occurred",
-            details=str(exc) if settings.api_reload else None
-        ).model_dump()
-    )
-
-
-# Health check
-@app.get("/health")
-async def health_check():
+@app.get("/", response_model=HealthResponse)
+async def root():
     """Health check endpoint"""
     return {
         "status": "healthy",
-        "version": "2.0.0",
-        "focus": "typesense",
-        "typesense": "connected" if typesense_client else ("disabled" if not settings.typesense_enabled else "unavailable"),
-        "search_strategy": settings.search_strategy,
-        "translation": "available" if translation_adapter else "unavailable"
+        "version": "1.0.0",
+        "search_engine": "Typesense"
     }
 
-
-# NLU and SPARQL endpoints - DEPRECATED (using Typesense now)
-# @app.post("/nlu/parse", response_model=NLUParseResponse)
-# async def parse_nlu(request: NLUParseRequest):
-#     """
-#     Parse natural language query into structured constraints
-#     """
-#     raise HTTPException(
-#         status_code=status.HTTP_410_GONE,
-#         detail="NLU endpoint deprecated. Use /search endpoint directly."
-#     )
-
-# @app.post("/sparql/build", response_model=SPARQLBuildResponse)
-# async def build_sparql(request: SPARQLBuildRequest):
-#     """
-#     Build SPARQL query from structured constraints
-#     """
-#     raise HTTPException(
-#         status_code=status.HTTP_410_GONE,
-#         detail="SPARQL builder deprecated. Use /search endpoint with Typesense."
-#     )
-
-
-# Main search endpoint
-@app.post("/search", response_model=SearchResponse)
-async def search(request: SearchRequest):
+@app.get("/api/search", response_model=SearchResponse)
+async def search_recipes(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(50, ge=1, le=250, description="Number of results"),
+    cuisine: Optional[str] = Query(None, description="Filter by cuisine"),
+    diet: Optional[str] = Query(None, description="Filter by diet"),
+    course: Optional[str] = Query(None, description="Filter by course")
+):
     """
-    Typesense-powered search with multilingual support
+    Search for recipes using semantic + keyword search
     
-    Search pipeline: Translation → Typesense (hybrid/semantic/keyword) → Response
+    - **q**: The search query (required)
+    - **limit**: Number of results to return (default: 50, max: 250)
+    - **cuisine**: Filter by cuisine type
+    - **diet**: Filter by diet type
+    - **course**: Filter by course type
     """
-    start_time = time.time()
-    
     try:
-        query = request.query
-        original_text = query.text
-        original_lang = query.lang
+        start = time.time()
         
-        logger.info("search_started", query=original_text, lang=original_lang)
+        filters = {}
+        if cuisine and cuisine != "All":
+            filters['cuisine'] = cuisine
+        if diet and diet != "All":
+            filters['diet'] = diet
+        if course and course != "All":
+            filters['course'] = course
         
-        # Step 1: Translate to English if needed
-        step1_start = time.time()
-        translated_text = original_text
-        if original_lang != 'en' and translation_adapter:
-            try:
-                translated_text, detected_lang = translation_adapter.translate(
-                    original_text,
-                    original_lang,
-                    'en'
-                )
-                logger.info(
-                    "query_translated",
-                    original=original_text,
-                    translated=translated_text,
-                    detected_lang=detected_lang,
-                    duration_ms=(time.time() - step1_start) * 1000
-                )
-            except Exception as e:
-                logger.warning("translation_failed", error=str(e))
-        else:
-            logger.info("translation_skipped", duration_ms=(time.time() - step1_start) * 1000)
+        results = client.search(q, limit=limit, filters=filters)
+        duration = (time.time() - start) * 1000  # Convert to ms
         
-        # Step 2: Simple constraints (parse_query not needed for Typesense)
-        step2_start = time.time()
-        # constraints, confidence = parse_query(translated_text, 'en')
-        # For now, use empty constraints
-        from models import SearchConstraints
-        constraints = SearchConstraints() if not query.constraints else query.constraints
-        confidence = 1.0
-        logger.info("constraints_ready", duration_ms=(time.time() - step2_start) * 1000)
-        
-        # Override with explicit constraints if provided
-        if query.constraints:
-            if query.constraints.include:
-                constraints.include = query.constraints.include
-            if query.constraints.exclude:
-                constraints.exclude = query.constraints.exclude
-            if query.constraints.cuisine:
-                constraints.cuisine = query.constraints.cuisine
-            if query.constraints.diet:
-                constraints.diet = query.constraints.diet
-            if query.constraints.maxCookMinutes:
-                constraints.maxCookMinutes = query.constraints.maxCookMinutes
-            if query.constraints.maxTotalMinutes:
-                constraints.maxTotalMinutes = query.constraints.maxTotalMinutes
-            if query.constraints.course:
-                constraints.course = query.constraints.course
-            if query.constraints.keywords:
-                constraints.keywords = query.constraints.keywords
-        
-        # Step 3: Choose search strategy
-        step3_start = time.time()
-        recipes = []
-        
-        if settings.search_strategy == 'typesense' and typesense_client:
-            # Pure Typesense semantic search
-            logger.info("using_typesense_search")
-            
-            # Build filter string for Typesense
-            filter_parts = []
-            if constraints.cuisine:
-                filter_parts.append(f"cuisine:={constraints.cuisine}")
-            if constraints.diet:
-                filter_parts.append(f"diet:={constraints.diet}")
-            filter_str = ' && '.join(filter_parts) if filter_parts else None
-            
-            # Perform search
-            result = typesense_client.semantic_search(
-                translated_text,
-                limit=50,
-                filters=filter_str
-            )
-            
-            # Convert Typesense results to Recipe objects
-            recipes = []
-            for hit in result.get('hits', []):
-                doc = hit['document']
-                recipes.append(Recipe(
-                    iri=doc.get('id', ''),
-                    title=doc.get('name', ''),
-                    cuisine=doc.get('cuisine'),
-                    diet=doc.get('diet'),
-                    course=doc.get('course'),
-                    ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
-                    instructions=doc.get('description')
-                ))
-            
-            logger.info("typesense_search_completed", recipe_count=len(recipes), duration_ms=(time.time() - step3_start) * 1000)
-            
-        elif settings.search_strategy == 'hybrid' and typesense_client:
-            # Hybrid: Typesense semantic + keyword
-            logger.info("using_hybrid_search", semantic_weight=settings.hybrid_semantic_weight)
-            
-            # Build filter string
-            filter_parts = []
-            if constraints.cuisine:
-                filter_parts.append(f"cuisine:={constraints.cuisine}")
-            if constraints.diet:
-                filter_parts.append(f"diet:={constraints.diet}")
-            filter_str = ' && '.join(filter_parts) if filter_parts else None
-            
-            # Perform hybrid search
-            result = typesense_client.hybrid_search(
-                translated_text,
-                limit=50,
-                semantic_weight=settings.hybrid_semantic_weight,
-                filters=filter_str
-            )
-            
-            # Convert Typesense results to Recipe objects
-            recipes = []
-            for hit in result.get('hits', []):
-                doc = hit['document']
-                recipes.append(Recipe(
-                    iri=doc.get('id', ''),
-                    title=doc.get('name', ''),
-                    cuisine=doc.get('cuisine'),
-                    diet=doc.get('diet'),
-                    course=doc.get('course'),
-                    ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
-                    instructions=doc.get('description')
-                ))
-            
-            logger.info("hybrid_search_completed", recipe_count=len(recipes), duration_ms=(time.time() - step3_start) * 1000)
-            
-        else:
-            # Typesense is required
-            if not typesense_client:
-                raise HTTPException(
-                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                    detail="Typesense search service is not available"
-                )
-            
-            # Use Typesense semantic search as default
-            logger.info("using_semantic_search")
-            result = typesense_client.semantic_search(translated_text, limit=50)
-            for hit in result.get('hits', []):
-                doc = hit['document']
-                recipes.append(Recipe(
-                    iri=doc.get('id', ''),
-                    title=doc.get('name', ''),
-                    cuisine=doc.get('cuisine'),
-                    diet=doc.get('diet'),
-                    course=doc.get('course'),
-                    ingredients=doc.get('ingredients', []) if isinstance(doc.get('ingredients'), list) else [],
-                    instructions=doc.get('description')
-                ))
-            logger.info("semantic_search_completed", recipe_count=len(recipes))
-        
-        # Step 4: Results already ranked by Typesense
-        step4_start = time.time()
-        # Hybrid/semantic search already ranked
-        ranked_recipes = recipes
-        logger.info("results_ready", count=len(recipes), duration_ms=(time.time() - step4_start) * 1000)
-        
-        # Calculate duration
-        duration_ms = (time.time() - start_time) * 1000
-        
-        logger.info(
-            "search_completed",
-            query=original_text,
-            results=len(ranked_recipes),
-            duration_ms=duration_ms
-        )
-        
-        return SearchResponse(
-            results=ranked_recipes,
-            query=query,
-            translatedQuery=translated_text if translated_text != original_text else None,
-            count=len(ranked_recipes),
-            durationMs=duration_ms
-        )
-        
-    except HTTPException:
-        raise
+        return {
+            "hits": results['hits'],
+            "found": results['found'],
+            "query": q,
+            "duration_ms": round(duration, 2)
+        }
     except Exception as e:
-        logger.error("search_failed", error=str(e), exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Search failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
-
-# STT endpoint - DEPRECATED
-# @app.post("/stt", response_model=STTResponse)
-# async def speech_to_text(request: STTRequest):
-#     """
-#     Convert audio to text using Whisper/Vosk
-#     """
-#     raise HTTPException(
-#         status_code=status.HTTP_410_GONE,
-#         detail="STT endpoint deprecated. Frontend should implement speech recognition directly."
-#     )
-
-
-# Translation endpoint
-@app.post("/translate", response_model=TranslateResponse)
-async def translate(request: TranslateRequest):
+@app.get("/api/autocomplete", response_model=AutocompleteResponse)
+async def autocomplete_query(
+    q: str = Query(..., description="Partial query for autocomplete"),
+    limit: int = Query(5, ge=1, le=10, description="Number of suggestions")
+):
     """
-    Translate text between languages
+    Get query suggestions for autocomplete
     
-    Supports Indic languages with culinary terminology preservation
+    - **q**: Partial search query
+    - **limit**: Number of suggestions (default: 5, max: 10)
     """
-    if not translation_adapter:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Translation service not available"
-        )
-    
     try:
-        translated_text, detected_source = translation_adapter.translate(
-            request.text,
-            request.sourceLang,
-            request.targetLang
-        )
-        
-        logger.info(
-            "translation_completed",
-            source_lang=detected_source,
-            target_lang=request.targetLang,
-            original_length=len(request.text),
-            translated_length=len(translated_text)
-        )
-        
-        return TranslateResponse(
-            translatedText=translated_text,
-            sourceLang=detected_source,
-            targetLang=request.targetLang
-        )
-        
+        suggestions = client.autocomplete_query(q, limit=limit)
+        return {
+            "suggestions": [hit['document']['query'] for hit in suggestions]
+        }
     except Exception as e:
-        logger.error("translation_failed", error=str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Translation failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Autocomplete failed: {str(e)}")
 
+@app.get("/api/ingredient")
+async def lookup_ingredient(
+    q: str = Query(..., description="Ingredient to lookup"),
+    limit: int = Query(3, ge=1, le=10, description="Number of results")
+):
+    """
+    Lookup ingredient information and substitutes
+    
+    - **q**: Ingredient name
+    - **limit**: Number of results (default: 3, max: 10)
+    """
+    try:
+        results = client.autocomplete_ingredient(q, limit=limit)
+        return {
+            "results": [hit['document'] for hit in results]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ingredient lookup failed: {str(e)}")
+
+@app.get("/api/stats")
+async def get_stats():
+    """Get platform statistics"""
+    return {
+        "total_recipes": "9600+",
+        "cuisines": "15+",
+        "diet_types": "7+",
+        "search_type": "Semantic + Keyword Hybrid"
+    }
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=settings.api_host,
-        port=settings.api_port,
-        reload=False,  # Disabled due to ML library loading issues
-        log_level=settings.log_level.lower()
-    )
+    uvicorn.run(app, host="0.0.0.0", port=8000)

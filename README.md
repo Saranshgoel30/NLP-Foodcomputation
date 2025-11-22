@@ -1,54 +1,105 @@
-﻿#  MMFOOD - Multilingual Food Search
+﻿# Food Intelligence Platform (NLP-Foodcomputation)#  MMFOOD - Multilingual Food Search
 
-**Typesense-Powered  10+ Languages  Lightning Fast**
+
+
+This project is a semantic search engine for recipes, built with Typesense and Sentence Transformers.**Typesense-Powered  10+ Languages  Lightning Fast**
+
+It replicates the core functionality of the `food-intelligence-platform` using a Python-first approach.
 
 A modern food ingredient search engine powered by Typesense with semantic understanding and multilingual support.
 
+## Prerequisites
+
 ##  Key Features
 
-###  **Intelligent Search**
+- Docker Desktop (must be running)
+
+- Python 3.10+###  **Intelligent Search**
+
 - **Semantic Search**: Understands meaning, not just keywords
-- **Keyword Search**: Lightning-fast exact matching  
+
+## Setup- **Keyword Search**: Lightning-fast exact matching  
+
 - **Hybrid Search**: Best of both worlds with smart fusion
-- **70ms** average latency
 
-###  **Multilingual Support**
-Search in 10+ Indian languages:
-- English  हद  தமழ  ಕನನಡ  বল  اردو  മലയള  తలగ  ગજરત  ਪਜਬ
+1. **Install Dependencies**- **70ms** average latency
 
-###  **Performance**
-- **993** food ingredients indexed
-- **70ms** average response time
-- **92.3%** search success rate
+   ```bash
+
+   pip install -r requirements.txt###  **Multilingual Support**
+
+   pip install streamlitSearch in 10+ Indian languages:
+
+   ```- English  हद  தமழ  ಕನನಡ  বল  اردو  മലയള  తలగ  ગજરત  ਪਜਬ
+
+
+
+2. **Start Typesense**###  **Performance**
+
+   ```bash- **993** food ingredients indexed
+
+   docker compose up -d- **70ms** average response time
+
+   ```- **92.3%** search success rate
+
 - **100%** multilingual coverage
 
-##  Architecture
+3. **Index Data**
+
+   The recipe data is located in `data/updated_recipes.jsonl`.##  Architecture
+
+   Run the indexer to generate embeddings and populate Typesense:
+
+   ```bash```
+
+   python scripts/index_recipes.py
+
+   ```   Next.js     Frontend (localhost:3000)
+
+   *Note: This process takes a few minutes as it generates embeddings for ~9600 recipes.*   Frontend  
+
+
+
+## Usage       
+
+
+
+### Web Interface (Streamlit)   FastAPI     Backend (localhost:8000)
+
+Run the interactive search UI:   Backend   
+
+```bash
+
+python -m streamlit run app/ui.py       
 
 ```
-
-   Next.js     Frontend (localhost:3000)
-   Frontend  
-
-       
-
-   FastAPI     Backend (localhost:8000)
-   Backend   
-
-       
 
   Typesense    Vector Search (localhost:8108)
-   Search       Semantic embeddings
-   Multilingual support
-```
 
-##  Project Structure
+### CLI Search   Search       Semantic embeddings
 
-```
+Run a quick search from the terminal:   Multilingual support
+
+```bash```
+
+python scripts/search.py "healthy breakfast with oats"
+
+```##  Project Structure
+
+
+
+## Architecture```
+
 NLP-Foodcomputation/
- frontend/              # Next.js application
-    app/              # App router pages
-    components/       # React components
-    lib/              # API client
+
+- **Database**: Typesense (Vector Search) frontend/              # Next.js application
+
+- **Embeddings**: `sentence-transformers/paraphrase-multilingual-mpnet-base-v2`    app/              # App router pages
+
+- **Backend**: Python (`app/api/search_client.py`)    components/       # React components
+
+- **Frontend**: Streamlit (`app/ui.py`)    lib/              # API client
+
  app/api/              # FastAPI backend
     main.py          # API endpoints
     typesense_client.py  # Typesense integration

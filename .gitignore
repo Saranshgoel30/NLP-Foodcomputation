@@ -1,90 +1,177 @@
-# Python# Python
+# Python# Python# Python
 
-__pycache__/__pycache__/
+__pycache__/
 
-*.py[cod]*.py[cod]
+*.py[cod]__pycache__/__pycache__/
 
-*$py.class*$py.class
+*$py.class
 
-*.so*.so
+*.so*.py[cod]*.py[cod]
 
-.Python.Python
+.Python
 
-build/build/
+build/*$py.class*$py.class
 
-develop-eggs/develop-eggs/
+develop-eggs/
 
-dist/dist/
+dist/*.so*.so
 
-downloads/downloads/
+downloads/
 
-eggs/eggs/
+eggs/.Python.Python
 
-.eggs/.eggs/
+.eggs/
 
-lib/lib/
+lib/build/build/
 
-lib64/lib64/
+lib64/
 
-parts/parts/
+parts/develop-eggs/develop-eggs/
 
-sdist/sdist/
+sdist/
 
-var/var/
+var/dist/dist/
 
-wheels/wheels/
+wheels/
 
-*.egg-info/*.egg-info/
+*.egg-info/downloads/downloads/
 
-.installed.cfg.installed.cfg
+.installed.cfg
 
-*.egg*.egg
+*.eggeggs/eggs/
 
-MANIFESTMANIFEST
+MANIFEST
 
-*.log.env
-
-.pytest_cache/.venv
+venv/.eggs/.eggs/
 
 env/
 
-# Virtual Environmentvenv/
-
-venv/ENV/
-
-env/env.bak/
-
-ENV/venv.bak/
+ENV/lib/lib/
 
 .venv
 
+lib64/lib64/
+
+# Environment variables
+
+.envparts/parts/
+
+.env.local
+
+.env.development.localsdist/sdist/
+
+.env.test.local
+
+.env.production.localvar/var/
+
+
+
+# IDEswheels/wheels/
+
+.vscode/
+
+.idea/*.egg-info/*.egg-info/
+
+*.swp
+
+*.swo.installed.cfg.installed.cfg
+
+*~
+
+*.egg*.egg
+
+# OS
+
+.DS_StoreMANIFESTMANIFEST
+
+Thumbs.db
+
+*.log.env
+
 # Node.js
 
-# Environment Variablesnode_modules/
+node_modules/.pytest_cache/.venv
+
+npm-debug.log*
+
+yarn-debug.log*env/
+
+yarn-error.log*
+
+.pnpm-debug.log*# Virtual Environmentvenv/
+
+
+
+# Next.jsvenv/ENV/
+
+frontend/.next/
+
+frontend/out/env/env.bak/
+
+frontend/build/
+
+frontend/dist/ENV/venv.bak/
+
+
+
+# Typesense.venv
+
+typesense-data/
+
+# Node.js
+
+# Logs
+
+*.log# Environment Variablesnode_modules/
+
+logs/
 
 .envnpm-debug.log*
 
-.env.localyarn-debug.log*
+# Testing
 
-.env.*.localyarn-error.log*
+.pytest_cache/.env.localyarn-debug.log*
 
-.pnpm-debug.log*
+.coverage
 
-# IDEs.next/
+htmlcov/.env.*.localyarn-error.log*
+
+.tox/
+
+.hypothesis/.pnpm-debug.log*
+
+
+
+# Jupyter Notebook# IDEs.next/
+
+.ipynb_checkpoints
 
 .vscode/out/
 
-.idea/build/
+# pyenv
 
-*.swp.npm
+.python-version.idea/build/
 
-*.swo.eslintcache
+
+
+# mypy*.swp.npm
+
+.mypy_cache/
+
+.dmypy.json*.swo.eslintcache
+
+dmypy.json
 
 *~.node_repl_history
 
-.DS_Store*.tgz
+# Temporary files
 
-.yarn-integrity
+*.tmp.DS_Store*.tgz
+
+*.temp
+
+.cache/.yarn-integrity
+
 
 # Node.js / Frontend
 

@@ -1,0 +1,6 @@
+typesense
+sentence-transformers
+torch
+requests
+
+streamlit
