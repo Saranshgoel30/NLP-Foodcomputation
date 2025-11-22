@@ -1,52 +1,140 @@
-﻿# Food Intelligence Platform (NLP-Foodcomputation)#  MMFOOD - Multilingual Food Search
+﻿# 🍽️ Food Intelligence Platform (NLP-Foodcomputation)
 
+## MMFOOD - LLM-Enhanced Multilingual Recipe Search
 
+**Next.js 14 • FastAPI • Typesense • DeepSeek LLM • 10+ Languages • Lightning Fast**
 
-This project is a semantic search engine for recipes, built with Typesense and Sentence Transformers.**Typesense-Powered  10+ Languages  Lightning Fast**
+A modern recipe search platform powered by semantic understanding, natural language processing, and **LLM-powered intelligence** for smarter search and multilingual translation.
 
-It replicates the core functionality of the `food-intelligence-platform` using a Python-first approach.
+---
 
-A modern food ingredient search engine powered by Typesense with semantic understanding and multilingual support.
+## ✨ Key Features
 
-## Prerequisites
+### 🧠 **LLM-Powered Intelligence** (NEW!)
+- **Smart Query Understanding**: Uses DeepSeek/GPT-4o-mini for intelligent interpretation
+- **Multilingual Translation**: Translate recipes between English, Hindi, and regional languages
+- **Context-Aware**: Understands dietary restrictions (Jain, vegan, etc.) and cooking contexts
+- **Automatic Fallback**: Works with or without LLM - rule-based fallback always available
 
-##  Key Features
-
-- Docker Desktop (must be running)
-
-- Python 3.10+###  **Intelligent Search**
-
+### 🔍 **Intelligent Search**
 - **Semantic Search**: Understands meaning, not just keywords
+- **Natural Language**: Query like "jain recipes without tomatoes" or "quick pasta under 20 minutes"
+- **Hybrid Search**: Combines semantic and keyword search with smart fusion
+- **70ms** average latency
 
-## Setup- **Keyword Search**: Lightning-fast exact matching  
-
-- **Hybrid Search**: Best of both worlds with smart fusion
-
-1. **Install Dependencies**- **70ms** average latency
-
-   ```bash
-
-   pip install -r requirements.txt###  **Multilingual Support**
-
-   pip install streamlitSearch in 10+ Indian languages:
-
-   ```- English  हद  தமழ  ಕನನಡ  বল  اردو  മലയള  తలగ  ગજરત  ਪਜਬ
+### 🌍 **Multilingual Support**
+Search in 10+ Indian languages:
+- English • हिंदी • தமிழ் • ಕನ್ನಡ • বাংলা • اردو • മലയാളം • తెలుగు • ગુજરાતી • ਪੰਜਾਬੀ
 
 
 
-2. **Start Typesense**###  **Performance**
-
-   ```bash- **993** food ingredients indexed
-
-   docker compose up -d- **70ms** average response time
-
-   ```- **92.3%** search success rate
-
+### 📊 **Performance**
+- **9,600+** recipes indexed
+- **70ms** average response time
+- **92.3%** search success rate
 - **100%** multilingual coverage
 
-3. **Index Data**
+---
 
-   The recipe data is located in `data/updated_recipes.jsonl`.##  Architecture
+## 🚀 Quick Start
+
+### Prerequisites
+- Docker Desktop (running)
+- Python 3.10+
+- Node.js 18+
+- (Optional) LLM API key for enhanced features
+
+### 1. Install Dependencies
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+```
+
+**Backend:**
+```bash
+cd app/api
+pip install -r requirements.txt
+```
+
+### 2. (Optional) Add LLM API Key for Enhanced Features
+
+**Get a key from:**
+- DeepSeek: https://platform.deepseek.com (Recommended - $0.14/$0.55 per 1M tokens)
+- OpenAI: https://platform.openai.com
+- Groq: https://console.groq.com
+
+**Add to `.env` file:**
+```bash
+# Copy example
+cp .env.example .env
+
+# Edit and add your key
+DEEPSEEK_API_KEY=sk-your-key-here
+```
+
+**Without API key**: System works perfectly with rule-based fallback!
+
+### 3. Start Services
+
+**Start Typesense:**
+```bash
+docker compose up -d
+```
+
+**Start Backend:**
+```bash
+cd app/api
+python main.py
+# Backend runs on http://localhost:8000
+```
+
+**Start Frontend:**
+```bash
+cd frontend
+npm run dev
+# Frontend runs on http://localhost:3000
+```
+
+### 4. Index Data (First Time Only)
+
+```bash
+python scripts/index_recipes.py
+```
+
+*Takes a few minutes to generate embeddings for 9,600+ recipes*
+
+---
+
+## 📖 LLM Integration
+
+**See [LLM_INTEGRATION.md](./LLM_INTEGRATION.md) for complete guide**
+
+### What LLM Adds:
+- Smart understanding of complex queries
+- Multilingual translation with food context
+- Automatic dietary restriction detection
+- Implied ingredient extraction
+- Context-aware search
+
+### Example Queries:
+```
+"jain recipes without tomatoes"
+→ Auto-excludes: onion, garlic, potatoes, tomatoes
+
+"pyaz aur lahsun ke bina sabzi"
+→ Translates to English
+→ Excludes: onion, garlic
+
+"quick pasta under 20 minutes"
+→ Filters by cooking time
+→ Smart ingredient matching
+```
+
+---
+
+## 🏗️ Architecture
 
    Run the indexer to generate embeddings and populate Typesense:
 

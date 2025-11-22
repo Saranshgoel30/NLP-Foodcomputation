@@ -62,6 +62,10 @@ class QueryParser:
             print(f"Warning: Could not load {filename}: {e}")
             return {}
     
+    def parse_query(self, query: str) -> Dict:
+        """Alias for parse() method for compatibility with enhanced parser"""
+        return self.parse(query)
+    
     def parse(self, query: str) -> Dict:
         """
         Parse a natural language query with advanced understanding
@@ -214,3 +218,12 @@ class QueryParser:
         clean = re.sub(r'\s+', ' ', clean).strip()
         
         return clean
+    
+    def extract_ingredients(self, query: str) -> Dict[str, List[str]]:
+        """Extract ingredients from query for compatibility with enhanced parser"""
+        parsed = self.parse(query)
+        return {
+            "included": parsed.get("required_ingredients", []),
+            "excluded": parsed.get("excluded_ingredients", []),
+            "implied": []
+        }

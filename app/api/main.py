@@ -10,15 +10,20 @@ from typing import List, Optional, Dict, Any
 import sys
 import os
 import time
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent dir to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.api.search_client import SearchClient
 from app.api.query_parser import QueryParser
+from app.api.enhanced_query_parser import enhanced_parser
 
-# Initialize query parser with comprehensive NLP data
-query_parser = QueryParser()
+# Initialize both parsers - enhanced uses LLM, original is fallback
+query_parser = QueryParser()  # Keep for backward compatibility
 
 app = FastAPI(
     title="Food Intelligence API",
@@ -71,13 +76,15 @@ async def search_recipes(
     course: Optional[str] = Query(None, description="Filter by course")
 ):
     """
-    Search for recipes using natural language understanding
+    Search for recipes using LLM-powered natural language understanding
     
     Supports queries like:
     - "fali ki sabzi without tomatoes and onions"
     - "quick pasta under 20 minutes"
     - "chocolate cake no eggs"
     - "spicy chicken with garlic"
+    - "jain recipes" (auto-excludes onion, garlic)
+    - Multilingual queries in Hindi/Regional languages
     
     - **q**: Natural language search query (required)
     - **limit**: Number of results to return (default: 50, max: 250)
@@ -88,34 +95,50 @@ async def search_recipes(
     try:
         start = time.time()
         
-        # Parse natural language query
-        parsed = query_parser.parse(q)
+        # Use enhanced LLM-powered parser
+        parsed = await enhanced_parser.parse_query(q)
         
         # Debug logging
-        print(f"\n🔍 Query Analysis:")
+        print(f"\n🔍 LLM-Enhanced Query Analysis:")
         print(f"  Original: {q}")
-        print(f"  Clean query: {parsed['clean_query']}")
-        print(f"  Excluded: {parsed['excluded_ingredients']}")
-        print(f"  Required: {parsed['required_ingredients']}")
-        print(f"  Time: {parsed['time_constraint']}\n")
+        print(f"  Method: {parsed.get('parsing_method', 'Unknown')}")
+        print(f"  Language: {parsed.get('language_detected', 'Unknown')}")
+        print(f"  Translated: {parsed.get('translated_query', q)}")
+        print(f"  Dish: {parsed.get('dish_name', 'N/A')}")
+        print(f"  Excluded: {parsed.get('excluded_ingredients', [])}")
+        print(f"  Required: {parsed.get('required_ingredients', [])}")
+        print(f"  Dietary: {parsed.get('dietary_preferences', [])}")
+        print(f"  Time: {parsed.get('cooking_time', 'N/A')}")
+        print(f"  Cuisine: {parsed.get('cuisine_type', 'N/A')}\n")
         
-        # Build filters from UI selections
+        # Build filters from UI selections and parsed data
         filters = {}
         if cuisine and cuisine != "All":
             filters['cuisine'] = cuisine
+        elif parsed.get('cuisine_type'):
+            # Use LLM-detected cuisine if not specified
+            filters['cuisine'] = parsed['cuisine_type']
+            
         if diet and diet != "All":
             filters['diet'] = diet
+        elif parsed.get('dietary_preferences'):
+            # Use LLM-detected dietary preferences
+            filters['diet'] = parsed['dietary_preferences'][0]
+            
         if course and course != "All":
             filters['course'] = course
         
-        # Use clean query for search with smart filtering
+        # Use translated/cleaned query for search
+        search_query = parsed.get('translated_query') or parsed.get('dish_name') or q
+        
+        # Use smart filtering with LLM-extracted ingredients
         results = client.search(
-            parsed['clean_query'] or q,  # Fallback to original if cleaning fails
+            search_query,
             limit=limit,
             filters=filters,
-            excluded_ingredients=parsed['excluded_ingredients'],
-            required_ingredients=parsed['required_ingredients'],
-            time_constraint=parsed['time_constraint']
+            excluded_ingredients=parsed.get('excluded_ingredients', []),
+            required_ingredients=parsed.get('required_ingredients', []),
+            time_constraint=parsed.get('cooking_time')
         )
         
         duration = (time.time() - start) * 1000  # Convert to ms
@@ -127,6 +150,7 @@ async def search_recipes(
             "duration_ms": round(duration, 2)
         }
     except Exception as e:
+        print(f"❌ Search error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
 @app.get("/api/autocomplete", response_model=AutocompleteResponse)
@@ -167,14 +191,70 @@ async def lookup_ingredient(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ingredient lookup failed: {str(e)}")
 
+@app.get("/api/translate")
+async def translate_text(
+    text: str = Query(..., description="Text to translate"),
+    target_lang: str = Query("English", description="Target language")
+):
+    """
+    Translate recipe-related text with food context preservation
+    
+    - **text**: Text to translate
+    - **target_lang**: Target language (English, Hindi, etc.)
+    """
+    try:
+        translated = await enhanced_parser.translate_from_english(text, target_lang)
+        return {
+            "original": text,
+            "translated": translated,
+            "target_language": target_lang
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+
+@app.get("/api/analyze")
+async def analyze_query(
+    q: str = Query(..., description="Query to analyze")
+):
+    """
+    Analyze query and extract detailed information
+    
+    Returns structured analysis including:
+    - Intent detection
+    - Ingredient extraction (included/excluded/implied)
+    - Dietary preferences
+    - Language detection
+    - Translation
+    
+    - **q**: Query to analyze
+    """
+    try:
+        # Get comprehensive analysis
+        parsed = await enhanced_parser.parse_query(q)
+        ingredients = await enhanced_parser.extract_smart_ingredients(q)
+        
+        return {
+            "query": q,
+            "analysis": parsed,
+            "ingredients": ingredients,
+            "parser_stats": enhanced_parser.get_stats()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
 @app.get("/api/stats")
 async def get_stats():
-    """Get platform statistics"""
+    """Get platform statistics including LLM status"""
+    parser_stats = enhanced_parser.get_stats()
+    
     return {
         "total_recipes": "9600+",
         "cuisines": "15+",
         "diet_types": "7+",
-        "search_type": "Semantic + Keyword Hybrid"
+        "search_type": "LLM-Enhanced Semantic Search",
+        "llm_enabled": parser_stats["llm_enabled"],
+        "llm_provider": parser_stats["llm_stats"]["provider"] if parser_stats["llm_enabled"] else "None",
+        "llm_model": parser_stats["llm_stats"]["model"] if parser_stats["llm_enabled"] else "N/A"
     }
 
 if __name__ == "__main__":
