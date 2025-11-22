@@ -1,0 +1,101 @@
+{
+  "explicit_exclusions": {
+    "patterns": [
+      "without {ingredient}",
+      "no {ingredient}",
+      "exclude {ingredient}",
+      "excluding {ingredient}",
+      "minus {ingredient}",
+      "doesn't have {ingredient}",
+      "does not have {ingredient}",
+      "doesn't contain {ingredient}",
+      "does not contain {ingredient}",
+      "free from {ingredient}",
+      "{ingredient} free",
+      "skip {ingredient}",
+      "remove {ingredient}",
+      "don't use {ingredient}",
+      "dont use {ingredient}",
+      "don't want {ingredient}",
+      "dont want {ingredient}",
+      "avoid {ingredient}",
+      "skip the {ingredient}",
+      "leave out {ingredient}",
+      "not using {ingredient}",
+      "bina {ingredient}",
+      "ke bina {ingredient}"
+    ],
+    "regex_patterns": [
+      "\\bwithout\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bno\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bexclud(?:e|ing)\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bminus\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bdoes\\s?n[o']?t\\s+(?:have|contain)\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bfree\\s+from\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "([a-z\\s,]+?)\\s*-?free(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bavoid(?:ing)?\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bleave\\s+out\\s+(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bskip(?:ping)?\\s+(?:the\\s+)?(?:any\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bbina\\s+([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bke\\s+bina\\s+([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)"
+    ]
+  },
+  "requirement_patterns": {
+    "patterns": [
+      "with {ingredient}",
+      "having {ingredient}",
+      "containing {ingredient}",
+      "must have {ingredient}",
+      "needs {ingredient}",
+      "requires {ingredient}",
+      "include {ingredient}",
+      "including {ingredient}",
+      "using {ingredient}",
+      "made with {ingredient}",
+      "ke saath {ingredient}"
+    ],
+    "regex_patterns": [
+      "\\bwith\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bhaving\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bcontaining\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bmust\\s+have\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bneeds\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\brequires\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\binclude?(?:ing)?\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\busing\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bmade\\s+with\\s+(?:some\\s+)?([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)",
+      "\\bke\\s+saath\\s+([a-z\\s,]+?)(?:\\s+and\\s+|\\s+or\\s+|\\s*,\\s*|$)"
+    ]
+  },
+  "time_constraints": {
+    "patterns": [
+      "under {time} minutes",
+      "less than {time} minutes",
+      "within {time} minutes",
+      "in {time} minutes",
+      "takes {time} minutes",
+      "{time} min or less",
+      "quick",
+      "fast",
+      "easy and quick",
+      "jaldi",
+      "turant"
+    ],
+    "regex_patterns": [
+      "\\b(?:under|less\\s+than|within|in|takes)\\s+(\\d+)\\s*min(?:ute)?s?",
+      "\\b(\\d+)\\s*min(?:ute)?s?\\s+or\\s+less",
+      "\\bquick(?:\\s+and\\s+easy)?",
+      "\\bfast(?:\\s+and\\s+easy)?",
+      "\\beasy\\s+and\\s+quick",
+      "\\bjaldi",
+      "\\bturant"
+    ],
+    "time_mappings": {
+      "quick": 30,
+      "fast": 20,
+      "easy and quick": 25,
+      "jaldi": 30,
+      "turant": 20
+    }
+  }
+}

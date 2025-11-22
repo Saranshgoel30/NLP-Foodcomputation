@@ -1,70 +1,75 @@
 """
-Natural Language Query Parser for Recipe Search
-Understands patterns like "without X", "no Y", "exclude Z", etc.
+Advanced Natural Language Query Parser for Recipe Search
+Uses comprehensive pattern matching and ingredient aliases from JSON files
 """
 
 import re
-from typing import Dict, List, Tuple
+import json
+import os
+from typing import Dict, List, Tuple, Set
 
 class QueryParser:
-    """Parse natural language queries to extract intent and constraints"""
+    """Advanced NLP parser with comprehensive ingredient understanding"""
     
-    # Patterns to identify exclusions
-    EXCLUSION_PATTERNS = [
-        r'\bwithout\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bno\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bexclude\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bminus\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bdoesn\'?t?\s+have\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bfree\s+from\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-    ]
+    def __init__(self):
+        """Load NLP data from JSON files"""
+        self.nlp_data_dir = os.path.join(os.path.dirname(__file__), 'nlp_data')
+        
+        # Load ingredient aliases and patterns
+        self.ingredient_data = self._load_json('ingredient_aliases.json')
+        self.pattern_data = self._load_json('exclusion_patterns.json')
+        self.context_data = self._load_json('dish_context.json')
+        
+        # Build reverse lookup for ingredients (alias -> canonical)
+        self.ingredient_lookup = {}
+        self.exclusion_patterns_map = {}
+        
+        for canonical, data in self.ingredient_data.items():
+            # Map all aliases to canonical name
+            for alias in data['aliases']:
+                self.ingredient_lookup[alias.lower()] = canonical
+            
+            # Store exclusion patterns for this ingredient
+            if 'exclusion_patterns' in data:
+                self.exclusion_patterns_map[canonical] = data['exclusion_patterns']
+        
+        # Compile regex patterns from JSON
+        self.exclusion_regex = [
+            re.compile(pattern, re.IGNORECASE) 
+            for pattern in self.pattern_data['explicit_exclusions']['regex_patterns']
+        ]
+        
+        self.requirement_regex = [
+            re.compile(pattern, re.IGNORECASE)
+            for pattern in self.pattern_data['requirement_patterns']['regex_patterns']
+        ]
     
-    # Patterns to identify requirements
-    REQUIREMENT_PATTERNS = [
-        r'\bwith\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bcontaining\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bhaving\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bmust\s+have\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-        r'\bneeds\s+([a-z\s,]+?)(?:\s+and\s+|\s+or\s+|$)',
-    ]
-    
-    # Time-related patterns
-    TIME_PATTERNS = [
-        (r'\bunder\s+(\d+)\s*min(?:ute)?s?', 'max_time'),
-        (r'\bless\s+than\s+(\d+)\s*min(?:ute)?s?', 'max_time'),
-        (r'\bquick(?:\s+and\s+easy)?', 30),  # Quick = under 30 mins
-        (r'\bfast', 20),  # Fast = under 20 mins
-        (r'\bin\s+(\d+)\s*min(?:ute)?s?', 'exact_time'),
-    ]
-    
-    # Common ingredient aliases
-    INGREDIENT_ALIASES = {
-        'onions': ['onion', 'onions', 'pyaz'],
-        'tomatoes': ['tomato', 'tomatoes', 'tamatar'],
-        'garlic': ['garlic', 'lahsun'],
-        'ginger': ['ginger', 'adrak'],
-        'chili': ['chili', 'chilli', 'mirch', 'pepper'],
-        'oil': ['oil', 'tel'],
-        'butter': ['butter', 'makkhan'],
-        'cheese': ['cheese', 'paneer'],
-        'milk': ['milk', 'doodh'],
-    }
+    def _load_json(self, filename: str) -> Dict:
+        """Load JSON file from nlp_data directory"""
+        try:
+            filepath = os.path.join(self.nlp_data_dir, filename)
+            with open(filepath, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load {filename}: {e}")
+            return {}
     
     def parse(self, query: str) -> Dict:
         """
-        Parse a natural language query and extract:
+        Parse a natural language query with advanced understanding
+        Extracts:
         - Core search terms (cleaned query)
-        - Excluded ingredients
-        - Required ingredients
+        - Excluded ingredients (with all variants)
+        - Required ingredients (with all variants)
         - Time constraints
         """
         query_lower = query.lower()
         
-        # Extract exclusions
-        excluded_ingredients = self._extract_ingredients(query_lower, self.EXCLUSION_PATTERNS)
+        # Extract exclusions with comprehensive pattern matching
+        excluded_ingredients = self._extract_exclusions(query_lower)
         
         # Extract requirements
-        required_ingredients = self._extract_ingredients(query_lower, self.REQUIREMENT_PATTERNS)
+        required_ingredients = self._extract_requirements(query_lower)
         
         # Extract time constraints
         time_constraint = self._extract_time_constraint(query_lower)
@@ -80,55 +85,100 @@ class QueryParser:
             'original_query': query
         }
     
-    def _extract_ingredients(self, query: str, patterns: List[str]) -> List[str]:
-        """Extract ingredients from query using regex patterns"""
-        ingredients = []
+    def _extract_exclusions(self, query: str) -> List[str]:
+        """Extract excluded ingredients using comprehensive patterns"""
+        exclusions = set()
         
-        for pattern in patterns:
-            matches = re.finditer(pattern, query, re.IGNORECASE)
+        # Try all exclusion regex patterns
+        for pattern in self.exclusion_regex:
+            matches = pattern.finditer(query)
             for match in matches:
-                # Get the captured group (ingredients text)
-                ing_text = match.group(1).strip()
+                # Get the captured ingredient text
+                ing_text = match.group(1).strip() if match.groups() else ""
                 
-                # Split by common delimiters
-                parts = re.split(r',|\s+and\s+|\s+or\s+', ing_text)
-                
-                # Clean and add each ingredient
-                for part in parts:
-                    part = part.strip()
-                    if part and len(part) > 1:
-                        # Normalize using aliases
-                        normalized = self._normalize_ingredient(part)
-                        if normalized not in ingredients:
-                            ingredients.append(normalized)
+                if ing_text:
+                    # Split by delimiters
+                    parts = re.split(r',|\s+and\s+|\s+or\s+', ing_text)
+                    
+                    for part in parts:
+                        part = part.strip()
+                        if part and len(part) > 1:
+                            # Find canonical ingredient and add it
+                            canonical = self._find_canonical_ingredient(part)
+                            if canonical:
+                                exclusions.add(canonical)
         
-        return ingredients
+        return list(exclusions)
     
-    def _normalize_ingredient(self, ingredient: str) -> str:
-        """Normalize ingredient name using aliases"""
-        ingredient = ingredient.strip().lower()
+    def _extract_requirements(self, query: str) -> List[str]:
+        """Extract required ingredients using comprehensive patterns"""
+        requirements = set()
         
-        # Check if it matches any alias group
-        for canonical, aliases in self.INGREDIENT_ALIASES.items():
-            if ingredient in aliases:
-                return canonical
+        # Try all requirement regex patterns
+        for pattern in self.requirement_regex:
+            matches = pattern.finditer(query)
+            for match in matches:
+                # Get the captured ingredient text
+                ing_text = match.group(1).strip() if match.groups() else ""
+                
+                if ing_text:
+                    # Split by delimiters
+                    parts = re.split(r',|\s+and\s+|\s+or\s+', ing_text)
+                    
+                    for part in parts:
+                        part = part.strip()
+                        if part and len(part) > 1:
+                            # Find canonical ingredient and add it
+                            canonical = self._find_canonical_ingredient(part)
+                            if canonical:
+                                requirements.add(canonical)
         
-        return ingredient
+        return list(requirements)
+    
+    def _find_canonical_ingredient(self, ingredient_text: str) -> str:
+        """
+        Find canonical ingredient name from any variant
+        Uses comprehensive lookup including partial matches
+        """
+        ingredient_text = ingredient_text.strip().lower()
+        
+        # Direct lookup
+        if ingredient_text in self.ingredient_lookup:
+            return self.ingredient_lookup[ingredient_text]
+        
+        # Try partial matches (e.g., "potato" matches "potatoes")
+        for alias, canonical in self.ingredient_lookup.items():
+            # Check if the text contains or is contained in an alias
+            if ingredient_text in alias or alias in ingredient_text:
+                # Make sure it's not a false positive (e.g., "not" in "onion")
+                if len(ingredient_text) >= 3:
+                    return canonical
+        
+        # Return as-is if no match found (will still work for filtering)
+        return ingredient_text
     
     def _extract_time_constraint(self, query: str) -> Dict:
-        """Extract time-related constraints"""
-        for pattern, constraint_type in self.TIME_PATTERNS:
+        """Extract time-related constraints from patterns"""
+        time_data = self.pattern_data.get('time_constraints', {})
+        time_mappings = time_data.get('time_mappings', {})
+        
+        # Check for keyword time constraints (quick, fast, etc.)
+        for keyword, minutes in time_mappings.items():
+            if keyword in query.lower():
+                return {'max_time': minutes}
+        
+        # Check for explicit time patterns
+        for pattern in time_data.get('regex_patterns', []):
             match = re.search(pattern, query, re.IGNORECASE)
             if match:
-                if isinstance(constraint_type, int):
-                    # Fixed time value (like "quick" = 30 mins)
-                    return {'max_time': constraint_type}
-                elif constraint_type == 'max_time':
-                    return {'max_time': int(match.group(1))}
-                elif constraint_type == 'exact_time':
+                if match.groups():
+                    # Extract numeric time value
                     time_val = int(match.group(1))
-                    # Allow some flexibility (±5 minutes)
-                    return {'min_time': time_val - 5, 'max_time': time_val + 5}
+                    if 'under' in pattern or 'less' in pattern or 'within' in pattern:
+                        return {'max_time': time_val}
+                    elif 'in' in pattern or 'takes' in pattern:
+                        # Allow some flexibility (±5 minutes)
+                        return {'min_time': max(0, time_val - 5), 'max_time': time_val + 5}
         
         return {}
     

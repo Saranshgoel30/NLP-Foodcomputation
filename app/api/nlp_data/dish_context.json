@@ -1,0 +1,38 @@
+{
+  "dish_types": {
+    "sabzi": ["sabzi", "sabji", "subzi", "subji", "vegetable", "vegetables", "veg"],
+    "curry": ["curry", "curries", "gravy"],
+    "dal": ["dal", "daal", "dhal", "lentil", "lentils"],
+    "rice": ["rice", "chawal", "biryani", "pulao", "pilaf"],
+    "roti": ["roti", "chapati", "paratha", "naan", "bread"],
+    "paneer": ["paneer"],
+    "chicken": ["chicken", "murgi", "murg"],
+    "soup": ["soup"],
+    "salad": ["salad"],
+    "snack": ["snack", "snacks", "namkeen"],
+    "dessert": ["dessert", "sweet", "mithai"],
+    "breakfast": ["breakfast", "nashta"]
+  },
+  "cooking_methods": {
+    "fried": ["fried", "fry", "deep fried", "tala hua"],
+    "baked": ["baked", "bake", "oven"],
+    "grilled": ["grilled", "grill", "tandoor", "tandoori"],
+    "steamed": ["steamed", "steam"],
+    "boiled": ["boiled", "boil"],
+    "roasted": ["roasted", "roast"],
+    "sauteed": ["sauteed", "saute"]
+  },
+  "dietary_preferences": {
+    "vegetarian": ["vegetarian", "veg", "shakahari"],
+    "vegan": ["vegan"],
+    "non-vegetarian": ["non-vegetarian", "non veg", "mansahari"],
+    "gluten-free": ["gluten free", "gluten-free"],
+    "dairy-free": ["dairy free", "dairy-free"]
+  },
+  "spice_levels": {
+    "mild": ["mild", "not spicy", "less spicy", "kam mirch"],
+    "medium": ["medium spicy", "medium", "moderate"],
+    "spicy": ["spicy", "hot", "teekha", "mirchi wala"],
+    "very_spicy": ["very spicy", "extra spicy", "bahut teekha"]
+  }
+}

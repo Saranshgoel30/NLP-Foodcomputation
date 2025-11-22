@@ -5,6 +5,8 @@ Mirrors the functionality of the reference 'searchClient.ts' but in Python.
 
 import typesense
 import os
+import re
+import json
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 # Lazy import for sentence_transformers to avoid DLL issues in some envs
@@ -163,7 +165,29 @@ class SearchClient:
         return result
     
     def _filter_by_ingredients(self, hits: list, excluded: list, required: list) -> list:
-        """Filter recipe hits based on ingredient constraints"""
+        """
+        Filter recipe hits based on ingredient constraints
+        Uses comprehensive pattern matching for better accuracy
+        """
+        import json
+        import os
+        
+        # Load ingredient patterns for comprehensive matching
+        nlp_data_dir = os.path.join(os.path.dirname(__file__), 'nlp_data')
+        ingredient_patterns = {}
+        
+        try:
+            with open(os.path.join(nlp_data_dir, 'ingredient_aliases.json'), 'r', encoding='utf-8') as f:
+                ingredient_data = json.load(f)
+                # Build pattern map for each canonical ingredient
+                for canonical, data in ingredient_data.items():
+                    ingredient_patterns[canonical] = {
+                        'aliases': [alias.lower() for alias in data.get('aliases', [])],
+                        'patterns': data.get('exclusion_patterns', [])
+                    }
+        except Exception as e:
+            print(f"Warning: Could not load ingredient patterns: {e}")
+        
         filtered = []
         
         for hit in hits:
@@ -172,22 +196,59 @@ class SearchClient:
             ingredients_lower = [ing.lower() for ing in ingredients]
             ingredients_text = ' '.join(ingredients_lower)
             
-            # Check exclusions
+            # Check exclusions with comprehensive matching
             has_excluded = False
-            for excluded_ing in excluded:
-                # Check if any ingredient contains the excluded term
-                if any(excluded_ing in ing for ing in ingredients_lower):
-                    has_excluded = True
+            for excluded_canonical in excluded:
+                # Get all patterns for this ingredient
+                patterns_data = ingredient_patterns.get(excluded_canonical, {})
+                aliases = patterns_data.get('aliases', [excluded_canonical])
+                regex_patterns = patterns_data.get('patterns', [])
+                
+                # Check each ingredient in the recipe
+                for recipe_ing in ingredients_lower:
+                    # Method 1: Check if any alias appears in ingredient
+                    for alias in aliases:
+                        if alias in recipe_ing:
+                            has_excluded = True
+                            break
+                    
+                    # Method 2: Use regex patterns if available
+                    if not has_excluded and regex_patterns:
+                        for pattern in regex_patterns:
+                            try:
+                                if re.search(pattern, recipe_ing, re.IGNORECASE):
+                                    has_excluded = True
+                                    break
+                            except:
+                                pass
+                    
+                    if has_excluded:
+                        break
+                
+                if has_excluded:
                     break
             
             if has_excluded:
                 continue
             
-            # Check requirements
+            # Check requirements with comprehensive matching
             has_all_required = True
-            for required_ing in required:
-                # Check if any ingredient contains the required term
-                if not any(required_ing in ing for ing in ingredients_lower):
+            for required_canonical in required:
+                # Get all patterns for this ingredient
+                patterns_data = ingredient_patterns.get(required_canonical, {})
+                aliases = patterns_data.get('aliases', [required_canonical])
+                
+                # Check if any ingredient matches
+                found = False
+                for recipe_ing in ingredients_lower:
+                    for alias in aliases:
+                        if alias in recipe_ing:
+                            found = True
+                            break
+                    if found:
+                        break
+                
+                if not found:
                     has_all_required = False
                     break
             

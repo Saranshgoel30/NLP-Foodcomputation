@@ -15,7 +15,10 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.api.search_client import SearchClient
-from app.api.query_parser import query_parser
+from app.api.query_parser import QueryParser
+
+# Initialize query parser with comprehensive NLP data
+query_parser = QueryParser()
 
 app = FastAPI(
     title="Food Intelligence API",

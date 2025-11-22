@@ -1,0 +1,238 @@
+{
+  "potatoes": {
+    "canonical": "potato",
+    "aliases": [
+      "potato", "potatoes", "aloo", "alu", "aaloo", "batata",
+      "baby potato", "baby potatoes", "new potato", "new potatoes",
+      "boiled potato", "boiled potatoes", "mashed potato", "mashed potatoes",
+      "sweet potato", "sweet potatoes", "shakarkandi",
+      "potato cubes", "potato pieces", "diced potato", "diced potatoes"
+    ],
+    "exclusion_patterns": [
+      ".*potato.*", ".*aloo.*", ".*alu.*", ".*batata.*"
+    ]
+  },
+  "onions": {
+    "canonical": "onion",
+    "aliases": [
+      "onion", "onions", "pyaz", "pyaaz", "kanda",
+      "chopped onion", "chopped onions", "sliced onion", "sliced onions",
+      "diced onion", "diced onions", "onion paste", "onion cubes",
+      "spring onion", "spring onions", "green onion", "green onions",
+      "red onion", "red onions", "white onion", "white onions",
+      "shallot", "shallots", "pearl onion", "pearl onions"
+    ],
+    "exclusion_patterns": [
+      ".*onion.*", ".*pyaz.*", ".*pyaaz.*", ".*kanda.*"
+    ]
+  },
+  "tomatoes": {
+    "canonical": "tomato",
+    "aliases": [
+      "tomato", "tomatoes", "tamatar", "tamaatar", "tamater",
+      "chopped tomato", "chopped tomatoes", "diced tomato", "diced tomatoes",
+      "tomato puree", "tomato paste", "tomato sauce", "tomato pulp",
+      "cherry tomato", "cherry tomatoes", "roma tomato", "roma tomatoes",
+      "canned tomato", "canned tomatoes", "crushed tomato", "crushed tomatoes"
+    ],
+    "exclusion_patterns": [
+      ".*tomato.*", ".*tamatar.*", ".*tamaatar.*", ".*tamater.*"
+    ]
+  },
+  "garlic": {
+    "canonical": "garlic",
+    "aliases": [
+      "garlic", "lahsun", "lasun", "lehsun",
+      "garlic clove", "garlic cloves", "minced garlic", "crushed garlic",
+      "garlic paste", "garlic powder", "chopped garlic"
+    ],
+    "exclusion_patterns": [
+      ".*garlic.*", ".*lahsun.*", ".*lasun.*", ".*lehsun.*"
+    ]
+  },
+  "ginger": {
+    "canonical": "ginger",
+    "aliases": [
+      "ginger", "adrak", "adrakh",
+      "ginger paste", "grated ginger", "chopped ginger", "minced ginger",
+      "ginger powder", "dry ginger", "saunth", "sonth"
+    ],
+    "exclusion_patterns": [
+      ".*ginger.*", ".*adrak.*", ".*adrakh.*"
+    ]
+  },
+  "paneer": {
+    "canonical": "paneer",
+    "aliases": [
+      "paneer", "panir", "cottage cheese",
+      "paneer cubes", "crumbled paneer", "grated paneer",
+      "paneer pieces", "paneer chunks"
+    ],
+    "exclusion_patterns": [
+      ".*paneer.*", ".*panir.*", ".*cottage cheese.*"
+    ]
+  },
+  "cheese": {
+    "canonical": "cheese",
+    "aliases": [
+      "cheese", "mozzarella", "cheddar", "parmesan",
+      "grated cheese", "shredded cheese", "cheese slice", "cheese slices",
+      "processed cheese", "cheese spread", "cream cheese"
+    ],
+    "exclusion_patterns": [
+      ".*cheese.*", ".*mozzarella.*", ".*cheddar.*", ".*parmesan.*"
+    ]
+  },
+  "milk": {
+    "canonical": "milk",
+    "aliases": [
+      "milk", "doodh", "dudh",
+      "whole milk", "skim milk", "low fat milk",
+      "condensed milk", "evaporated milk",
+      "almond milk", "soy milk", "coconut milk"
+    ],
+    "exclusion_patterns": [
+      ".*milk.*", ".*doodh.*", ".*dudh.*"
+    ]
+  },
+  "cream": {
+    "canonical": "cream",
+    "aliases": [
+      "cream", "malai",
+      "heavy cream", "whipping cream", "fresh cream",
+      "sour cream", "double cream", "single cream"
+    ],
+    "exclusion_patterns": [
+      ".*cream.*", ".*malai.*"
+    ]
+  },
+  "butter": {
+    "canonical": "butter",
+    "aliases": [
+      "butter", "makkhan", "makhan",
+      "unsalted butter", "salted butter",
+      "ghee", "clarified butter"
+    ],
+    "exclusion_patterns": [
+      ".*butter.*", ".*makkhan.*", ".*makhan.*", ".*ghee.*"
+    ]
+  },
+  "eggs": {
+    "canonical": "egg",
+    "aliases": [
+      "egg", "eggs", "anda", "ande",
+      "beaten egg", "beaten eggs", "egg white", "egg whites",
+      "egg yolk", "egg yolks", "whole egg", "whole eggs"
+    ],
+    "exclusion_patterns": [
+      ".*egg.*", ".*anda.*", ".*ande.*"
+    ]
+  },
+  "chicken": {
+    "canonical": "chicken",
+    "aliases": [
+      "chicken", "murgi", "murg",
+      "chicken breast", "chicken thigh", "chicken leg",
+      "boneless chicken", "chicken pieces", "chicken chunks"
+    ],
+    "exclusion_patterns": [
+      ".*chicken.*", ".*murgi.*", ".*murg.*"
+    ]
+  },
+  "meat": {
+    "canonical": "meat",
+    "aliases": [
+      "meat", "mutton", "lamb", "beef", "pork",
+      "goat meat", "minced meat", "ground meat"
+    ],
+    "exclusion_patterns": [
+      ".*meat.*", ".*mutton.*", ".*lamb.*", ".*beef.*", ".*pork.*", ".*goat.*"
+    ]
+  },
+  "fish": {
+    "canonical": "fish",
+    "aliases": [
+      "fish", "machli", "machchi",
+      "salmon", "tuna", "cod", "tilapia",
+      "fish fillet", "fish pieces"
+    ],
+    "exclusion_patterns": [
+      ".*fish.*", ".*machli.*", ".*machchi.*", ".*salmon.*", ".*tuna.*"
+    ]
+  },
+  "nuts": {
+    "canonical": "nut",
+    "aliases": [
+      "nut", "nuts",
+      "cashew", "cashews", "kaju",
+      "almond", "almonds", "badam",
+      "walnut", "walnuts", "akhrot",
+      "pistachio", "pistachios", "pista",
+      "peanut", "peanuts", "moongfali"
+    ],
+    "exclusion_patterns": [
+      ".*nut.*", ".*cashew.*", ".*kaju.*", ".*almond.*", ".*badam.*",
+      ".*walnut.*", ".*akhrot.*", ".*pistachio.*", ".*pista.*",
+      ".*peanut.*", ".*moongfali.*"
+    ]
+  },
+  "coconut": {
+    "canonical": "coconut",
+    "aliases": [
+      "coconut", "nariyal",
+      "grated coconut", "coconut milk", "coconut cream",
+      "desiccated coconut", "coconut powder",
+      "fresh coconut", "dried coconut"
+    ],
+    "exclusion_patterns": [
+      ".*coconut.*", ".*nariyal.*"
+    ]
+  },
+  "oil": {
+    "canonical": "oil",
+    "aliases": [
+      "oil", "tel",
+      "vegetable oil", "cooking oil", "olive oil",
+      "mustard oil", "sarso ka tel",
+      "coconut oil", "sunflower oil", "sesame oil"
+    ],
+    "exclusion_patterns": [
+      ".*oil.*", ".*tel.*"
+    ]
+  },
+  "chili": {
+    "canonical": "chili",
+    "aliases": [
+      "chili", "chilli", "chillies", "chilies",
+      "mirch", "mirchi",
+      "green chili", "green chilli", "hari mirch",
+      "red chili", "red chilli", "lal mirch",
+      "chili powder", "red chili powder", "lal mirch powder",
+      "cayenne pepper", "paprika"
+    ],
+    "exclusion_patterns": [
+      ".*chili.*", ".*chilli.*", ".*mirch.*", ".*mirchi.*", ".*cayenne.*", ".*paprika.*"
+    ]
+  },
+  "coriander": {
+    "canonical": "coriander",
+    "aliases": [
+      "coriander", "cilantro", "dhania",
+      "coriander leaves", "fresh coriander", "chopped coriander",
+      "coriander powder", "ground coriander"
+    ],
+    "exclusion_patterns": [
+      ".*coriander.*", ".*cilantro.*", ".*dhania.*"
+    ]
+  },
+  "cumin": {
+    "canonical": "cumin",
+    "aliases": [
+      "cumin", "jeera", "jira",
+      "cumin seeds", "cumin powder", "ground cumin"
+    ],
+    "exclusion_patterns": [
+      ".*cumin.*", ".*jeera.*", ".*jira.*"
+    ]
+  }
+}
