@@ -15,11 +15,12 @@ import time
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.api.search_client import SearchClient
+from app.api.query_parser import query_parser
 
 app = FastAPI(
     title="Food Intelligence API",
-    description="Semantic search API for recipes with autocomplete",
-    version="1.0.0"
+    description="Semantic search API for recipes with natural language understanding",
+    version="2.0.0"
 )
 
 # CORS middleware to allow frontend requests
@@ -60,16 +61,22 @@ async def root():
 
 @app.get("/api/search", response_model=SearchResponse)
 async def search_recipes(
-    q: str = Query(..., description="Search query"),
+    q: str = Query(..., description="Natural language search query"),
     limit: int = Query(50, ge=1, le=250, description="Number of results"),
     cuisine: Optional[str] = Query(None, description="Filter by cuisine"),
     diet: Optional[str] = Query(None, description="Filter by diet"),
     course: Optional[str] = Query(None, description="Filter by course")
 ):
     """
-    Search for recipes using semantic + keyword search
+    Search for recipes using natural language understanding
     
-    - **q**: The search query (required)
+    Supports queries like:
+    - "fali ki sabzi without tomatoes and onions"
+    - "quick pasta under 20 minutes"
+    - "chocolate cake no eggs"
+    - "spicy chicken with garlic"
+    
+    - **q**: Natural language search query (required)
     - **limit**: Number of results to return (default: 50, max: 250)
     - **cuisine**: Filter by cuisine type
     - **diet**: Filter by diet type
@@ -78,6 +85,10 @@ async def search_recipes(
     try:
         start = time.time()
         
+        # Parse natural language query
+        parsed = query_parser.parse(q)
+        
+        # Build filters from UI selections
         filters = {}
         if cuisine and cuisine != "All":
             filters['cuisine'] = cuisine
@@ -86,7 +97,16 @@ async def search_recipes(
         if course and course != "All":
             filters['course'] = course
         
-        results = client.search(q, limit=limit, filters=filters)
+        # Use clean query for search with smart filtering
+        results = client.search(
+            parsed['clean_query'] or q,  # Fallback to original if cleaning fails
+            limit=limit,
+            filters=filters,
+            excluded_ingredients=parsed['excluded_ingredients'],
+            required_ingredients=parsed['required_ingredients'],
+            time_constraint=parsed['time_constraint']
+        )
+        
         duration = (time.time() - start) * 1000  # Convert to ms
         
         return {

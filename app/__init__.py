@@ -1,3 +1,0 @@
-"""
-MMFOOD Application Root
-"""

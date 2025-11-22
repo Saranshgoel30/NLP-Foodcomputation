@@ -127,8 +127,8 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-            placeholder="Search for 'spicy chicken dinner' or 'vegan dessert'..."
-            className="w-full px-6 py-4 pl-14 text-lg font-medium border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 shadow-lg bg-white text-gray-900 placeholder-gray-400"
+          placeholder="Try 'butter chicken without onions' or 'quick pasta under 20 minutes'..."
+          className="w-full px-6 py-4 pl-14 text-lg font-medium border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 shadow-lg bg-white text-gray-900 placeholder-gray-400"
           />
           <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
           {loading && (

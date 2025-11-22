@@ -106,11 +106,13 @@ class SearchClient:
         except Exception as e:
             print(f"Indexing failed: {e}")
 
-    def search(self, query: str, limit: int = 10, filters: Dict[str, str] = None):
+    def search(self, query: str, limit: int = 10, filters: Dict[str, str] = None, 
+               excluded_ingredients: list = None, required_ingredients: list = None,
+               time_constraint: dict = None):
         search_params = {
             'q': query,
             'query_by': 'name,description,ingredients',
-            'per_page': limit,
+            'per_page': limit * 3,  # Get more results for filtering
             'collection': COLLECTION_NAME,
             'facet_by': 'cuisine,diet,course'
         }
@@ -123,13 +125,78 @@ class SearchClient:
             if filter_str:
                 search_params['filter_by'] = ' && '.join(filter_str)
         
+        # Add time constraint to filters
+        if time_constraint:
+            time_filters = []
+            if 'max_time' in time_constraint:
+                time_filters.append(f"total_time:<={time_constraint['max_time']}")
+            if 'min_time' in time_constraint:
+                time_filters.append(f"total_time:>={time_constraint['min_time']}")
+            
+            if time_filters:
+                time_filter_str = ' && '.join(time_filters)
+                if 'filter_by' in search_params:
+                    search_params['filter_by'] += f" && {time_filter_str}"
+                else:
+                    search_params['filter_by'] = time_filter_str
+        
         if self.use_external_embeddings and query:
             vector = self.generate_embedding(query)
             search_params['vector_query'] = f"embedding:([{','.join(map(str, vector))}], k:50)"
 
         # Use multi_search to avoid URL length limits with vectors
         results = self.client.multi_search.perform({'searches': [search_params]}, {})
-        return results['results'][0]
+        result = results['results'][0]
+        
+        # Post-process to filter by ingredients
+        if excluded_ingredients or required_ingredients:
+            filtered_hits = self._filter_by_ingredients(
+                result['hits'], 
+                excluded_ingredients or [], 
+                required_ingredients or []
+            )
+            result['hits'] = filtered_hits[:limit]
+            result['found'] = len(filtered_hits)
+        else:
+            result['hits'] = result['hits'][:limit]
+        
+        return result
+    
+    def _filter_by_ingredients(self, hits: list, excluded: list, required: list) -> list:
+        """Filter recipe hits based on ingredient constraints"""
+        filtered = []
+        
+        for hit in hits:
+            ingredients = hit['document'].get('ingredients', [])
+            # Convert to lowercase for comparison
+            ingredients_lower = [ing.lower() for ing in ingredients]
+            ingredients_text = ' '.join(ingredients_lower)
+            
+            # Check exclusions
+            has_excluded = False
+            for excluded_ing in excluded:
+                # Check if any ingredient contains the excluded term
+                if any(excluded_ing in ing for ing in ingredients_lower):
+                    has_excluded = True
+                    break
+            
+            if has_excluded:
+                continue
+            
+            # Check requirements
+            has_all_required = True
+            for required_ing in required:
+                # Check if any ingredient contains the required term
+                if not any(required_ing in ing for ing in ingredients_lower):
+                    has_all_required = False
+                    break
+            
+            if not has_all_required:
+                continue
+            
+            filtered.append(hit)
+        
+        return filtered
 
     def autocomplete_ingredient(self, query: str, limit: int = 5):
         """

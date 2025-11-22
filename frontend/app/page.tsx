@@ -146,12 +146,12 @@ export default function Home() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto mb-12">
                   {[
-                    '🥞 High protein vegetarian breakfast',
-                    '🍰 Gluten-free desserts with chocolate',
-                    '🐟 Traditional Kerala fish curry',
-                    '⚡ Quick 15-minute snacks',
-                    '🌶️ Spicy Indian dinner recipes',
-                    '🥗 Low calorie vegan meals'
+                    '🚫 Butter chicken without onions and tomatoes',
+                    '⚡ Quick pasta under 20 minutes',
+                    '🥗 Salad no cheese',
+                    '🌶️ Spicy curry with garlic and ginger',
+                    '� Chocolate dessert without eggs',
+                    '� Sabzi excluding potatoes'
                   ].map((example, i) => (
                     <button
                       key={i}
