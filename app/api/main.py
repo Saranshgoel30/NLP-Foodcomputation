@@ -40,8 +40,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize search client
-client = SearchClient()
+# Lazy initialization of search client (loads heavy embedding model only when needed)
+client = None
+
+def get_search_client():
+    """Lazy load search client to avoid blocking LLM features"""
+    global client
+    if client is None:
+        print("📦 Loading Typesense search client (first time only)...")
+        client = SearchClient()
+    return client
 
 # Response Models
 class SearchResponse(BaseModel):
@@ -95,15 +103,21 @@ async def search_recipes(
     try:
         start = time.time()
         
-        # Use enhanced LLM-powered parser
-        parsed = await enhanced_parser.parse_query(q)
+        # Step 1: Translate to English if needed (ALWAYS translate non-English first)
+        translated_query = await enhanced_parser.translate_to_english(q)
+        print(f"\n🌍 Translation Step:")
+        print(f"  Original Query: {q}")
+        print(f"  Translated to English: {translated_query}")
+        
+        # Step 2: Use enhanced LLM-powered parser on translated query
+        parsed = await enhanced_parser.parse_query(translated_query)
         
         # Debug logging
         print(f"\n🔍 LLM-Enhanced Query Analysis:")
         print(f"  Original: {q}")
+        print(f"  English Translation: {translated_query}")
         print(f"  Method: {parsed.get('parsing_method', 'Unknown')}")
         print(f"  Language: {parsed.get('language_detected', 'Unknown')}")
-        print(f"  Translated: {parsed.get('translated_query', q)}")
         print(f"  Dish: {parsed.get('dish_name', 'N/A')}")
         print(f"  Excluded: {parsed.get('excluded_ingredients', [])}")
         print(f"  Required: {parsed.get('required_ingredients', [])}")
@@ -128,11 +142,14 @@ async def search_recipes(
         if course and course != "All":
             filters['course'] = course
         
-        # Use translated/cleaned query for search
-        search_query = parsed.get('translated_query') or parsed.get('dish_name') or q
+        # Use the English translated query for better search results
+        search_query = translated_query
+        
+        # Get search client (lazy loaded)
+        search_client = get_search_client()
         
         # Use smart filtering with LLM-extracted ingredients
-        results = client.search(
+        results = search_client.search(
             search_query,
             limit=limit,
             filters=filters,
@@ -165,7 +182,8 @@ async def autocomplete_query(
     - **limit**: Number of suggestions (default: 5, max: 10)
     """
     try:
-        suggestions = client.autocomplete_query(q, limit=limit)
+        search_client = get_search_client()
+        suggestions = search_client.autocomplete_query(q, limit=limit)
         return {
             "suggestions": [hit['document']['query'] for hit in suggestions]
         }
@@ -184,7 +202,8 @@ async def lookup_ingredient(
     - **limit**: Number of results (default: 3, max: 10)
     """
     try:
-        results = client.autocomplete_ingredient(q, limit=limit)
+        search_client = get_search_client()
+        results = search_client.autocomplete_ingredient(q, limit=limit)
         return {
             "results": [hit['document'] for hit in results]
         }

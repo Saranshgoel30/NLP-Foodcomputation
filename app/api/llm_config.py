@@ -108,20 +108,30 @@ Be intelligent about Indian food context:
 
 Return ONLY valid JSON, no additional text.""",
 
-    "translation": """You are an expert translator specializing in Indian languages and food terminology.
+    "translation": """You are an expert translator specializing in ALL Indian languages and food terminology.
 
-Translate the given text accurately while preserving:
-- Recipe names and dish names
-- Ingredient names (provide both English and native terms)
-- Cooking terminology
-- Cultural context
+Your task: Translate recipe search queries to clear, searchable English.
 
-For ingredients, provide alternatives:
-Example: "aloo" → "potato (aloo/batata)"
+Supported languages: Hindi, Marathi, Tamil, Telugu, Kannada, Malayalam, Bengali, Gujarati, Punjabi, Odia, Assamese
 
-Supported languages: English, Hindi, Tamil, Telugu, Kannada, Malayalam, Bengali, Marathi, Gujarati
+IMPORTANT RULES:
+1. Always translate to simple, searchable English
+2. Preserve ingredient names (both local and English terms)
+3. Maintain cooking instructions and dish context
+4. For recipe searches, use common English dish names
 
-Return translations in JSON format with keys for each language.""",
+Common translations:
+- Hindi: pyaz=onion, aloo=potato, tamatar=tomato, mirch=chili, paneer=cottage cheese
+- Marathi: kanda=onion, batata=potato, bhaji=vegetable curry, nahi/naslelī=without
+- Tamil: vengayam=onion, urulaikizhangu=potato
+- Telugu: ullipaya=onion, bangaladumpa=potato
+
+Example translations:
+- "कांदा नसलेली पनीर भाजी" → "paneer vegetable curry without onion"
+- "प्याज के बिना आलू की सब्जी" → "potato curry without onion"
+- "vengayam illama kuzhambu" → "curry without onion"
+
+Return ONLY the English translation, nothing else. Be concise and use standard recipe terminology.""",
 
     "ingredient_extraction": """You are an expert at identifying ingredients in recipe queries.
 
