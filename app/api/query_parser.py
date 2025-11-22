@@ -20,28 +20,36 @@ class QueryParser:
         self.pattern_data = self._load_json('exclusion_patterns.json')
         self.context_data = self._load_json('dish_context.json')
         
+        print(f"✅ Loaded {len(self.ingredient_data)} ingredient groups")
+        print(f"✅ Loaded {len(self.pattern_data.get('explicit_exclusions', {}).get('regex_patterns', []))} exclusion patterns")
+        
         # Build reverse lookup for ingredients (alias -> canonical)
         self.ingredient_lookup = {}
         self.exclusion_patterns_map = {}
         
         for canonical, data in self.ingredient_data.items():
             # Map all aliases to canonical name
-            for alias in data['aliases']:
+            for alias in data.get('aliases', []):
                 self.ingredient_lookup[alias.lower()] = canonical
             
             # Store exclusion patterns for this ingredient
             if 'exclusion_patterns' in data:
                 self.exclusion_patterns_map[canonical] = data['exclusion_patterns']
         
+        print(f"✅ Built lookup with {len(self.ingredient_lookup)} ingredient aliases")
+        
         # Compile regex patterns from JSON
+        exclusion_patterns = self.pattern_data.get('explicit_exclusions', {}).get('regex_patterns', [])
+        requirement_patterns = self.pattern_data.get('requirement_patterns', {}).get('regex_patterns', [])
+        
         self.exclusion_regex = [
             re.compile(pattern, re.IGNORECASE) 
-            for pattern in self.pattern_data['explicit_exclusions']['regex_patterns']
+            for pattern in exclusion_patterns
         ]
         
         self.requirement_regex = [
             re.compile(pattern, re.IGNORECASE)
-            for pattern in self.pattern_data['requirement_patterns']['regex_patterns']
+            for pattern in requirement_patterns
         ]
     
     def _load_json(self, filename: str) -> Dict:
@@ -186,21 +194,23 @@ class QueryParser:
         """Remove constraint clauses from query to get clean search terms"""
         clean = query
         
-        # Remove exclusion clauses
-        for pattern in self.EXCLUSION_PATTERNS:
-            clean = re.sub(pattern, ' ', clean, flags=re.IGNORECASE)
+        # Remove exclusion clauses using patterns from JSON
+        for pattern in self.exclusion_regex:
+            clean = pattern.sub(' ', clean)
         
-        # Remove requirement clauses (but keep "with" if it's part of dish name)
-        # Be careful not to remove "with" from phrases like "rice with"
+        # Remove requirement clauses using patterns from JSON
+        for pattern in self.requirement_regex:
+            clean = pattern.sub(' ', clean)
         
         # Remove time constraint phrases
-        for pattern, _ in self.TIME_PATTERNS:
-            clean = re.sub(pattern, ' ', clean, flags=re.IGNORECASE)
+        time_data = self.pattern_data.get('time_constraints', {})
+        for pattern_str in time_data.get('regex_patterns', []):
+            try:
+                clean = re.sub(pattern_str, ' ', clean, flags=re.IGNORECASE)
+            except:
+                pass
         
         # Clean up extra whitespace
         clean = re.sub(r'\s+', ' ', clean).strip()
         
         return clean
-
-# Global instance
-query_parser = QueryParser()

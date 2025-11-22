@@ -91,6 +91,14 @@ async def search_recipes(
         # Parse natural language query
         parsed = query_parser.parse(q)
         
+        # Debug logging
+        print(f"\n🔍 Query Analysis:")
+        print(f"  Original: {q}")
+        print(f"  Clean query: {parsed['clean_query']}")
+        print(f"  Excluded: {parsed['excluded_ingredients']}")
+        print(f"  Required: {parsed['required_ingredients']}")
+        print(f"  Time: {parsed['time_constraint']}\n")
+        
         # Build filters from UI selections
         filters = {}
         if cuisine and cuisine != "All":
