@@ -157,8 +157,18 @@ class SearchClient:
                 excluded_ingredients or [], 
                 required_ingredients or []
             )
-            result['hits'] = filtered_hits[:limit]
-            result['found'] = len(filtered_hits)
+            
+            # If filtering removes ALL results, show original results with warning
+            if len(filtered_hits) == 0 and len(result['hits']) > 0:
+                print(f"⚠️  No recipes found matching exclusions: {excluded_ingredients}")
+                print(f"   Showing all {len(result['hits'])} results (may contain excluded ingredients)")
+                result['hits'] = result['hits'][:limit]
+                result['found'] = len(result['hits'])
+                result['excluded_applied'] = False  # Mark that exclusions weren't applied
+            else:
+                result['hits'] = filtered_hits[:limit]
+                result['found'] = len(filtered_hits)
+                result['excluded_applied'] = True
         else:
             result['hits'] = result['hits'][:limit]
         
