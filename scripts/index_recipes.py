@@ -22,11 +22,39 @@ def load_recipes_generator(file_path):
             if line.strip():
                 yield json.loads(line)
 
+def parse_instructions(instructions_data):
+    """Parse instructions into a list of strings."""
+    if not instructions_data:
+        return []
+    
+    # If it's already a list
+    if isinstance(instructions_data, list):
+        result = []
+        for item in instructions_data:
+            if isinstance(item, dict):
+                # Extract 'instructions' key from dict
+                step = item.get('instructions', str(item))
+            else:
+                step = str(item)
+            result.append(step.strip())
+        return result
+    
+    # If it's a string, split by common delimiters
+    elif isinstance(instructions_data, str):
+        # Try splitting by numbered patterns like "1.", "2.", etc.
+        import re
+        steps = re.split(r'\s*\d+\.\s*', instructions_data)
+        # Remove empty strings and strip whitespace
+        return [step.strip() for step in steps if step.strip()]
+    
+    return []
+
 def transform(item):
     # The JSONL data is already in a good format, just need to ensure types
     return {
         'name': item.get('name'),
         'description': item.get('description', ''),
+        'instructions': parse_instructions(item.get('instructions')),
         'ingredients': item.get('ingredients', []),
         'cuisine': item.get('cuisine'),
         'course': item.get('course'),

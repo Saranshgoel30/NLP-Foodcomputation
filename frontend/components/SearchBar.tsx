@@ -62,11 +62,25 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
   }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (!showSuggestions || suggestions.length === 0) {
-      if (e.key === 'Enter') {
+    // Handle Enter key for direct search (works even without suggestions)
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      if (showSuggestions && suggestions.length > 0 && selectedIndex >= 0) {
+        // User selected a suggestion with arrow keys
+        const selected = suggestions[selectedIndex]
+        onChange(selected)
+        onSearch(selected)
+      } else {
+        // Direct search with current input value
         onSearch(value)
-        setShowSuggestions(false)
       }
+      setShowSuggestions(false)
+      setSelectedIndex(-1)
+      return
+    }
+
+    // Handle other keys only when suggestions are visible
+    if (!showSuggestions || suggestions.length === 0) {
       return
     }
 
@@ -80,18 +94,6 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
       case 'ArrowUp':
         e.preventDefault()
         setSelectedIndex(prev => prev > 0 ? prev - 1 : -1)
-        break
-      case 'Enter':
-        e.preventDefault()
-        if (selectedIndex >= 0) {
-          const selected = suggestions[selectedIndex]
-          onChange(selected)
-          onSearch(selected)
-        } else {
-          onSearch(value)
-        }
-        setShowSuggestions(false)
-        setSelectedIndex(-1)
         break
       case 'Escape':
         setShowSuggestions(false)

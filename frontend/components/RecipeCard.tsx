@@ -15,7 +15,7 @@ interface Recipe {
   cook_time?: number
   servings?: number
   url?: string
-  instructions?: any
+  instructions?: string[]
 }
 
 export default function RecipeCard({ recipe, index }: { recipe: Recipe; index: number }) {
@@ -103,20 +103,17 @@ export default function RecipeCard({ recipe, index }: { recipe: Recipe; index: n
               <h4 className="text-lg font-bold text-gray-900 mb-3 flex items-center gap-2">
                 📝 Instructions
               </h4>
-              {recipe.instructions ? (
-                <div className="space-y-3 text-gray-700">
-                  {typeof recipe.instructions === 'string' 
-                    ? <p>{recipe.instructions}</p>
-                    : Array.isArray(recipe.instructions)
-                    ? recipe.instructions.map((step: any, i: number) => (
-                        <div key={i} className="flex items-start gap-2">
-                          <span className="font-bold text-purple-600">{i + 1}.</span>
-                          <span>{typeof step === 'object' ? step.instructions : step}</span>
-                        </div>
-                      ))
-                    : <p className="text-gray-500 italic">Instructions not available</p>
-                  }
-                </div>
+              {recipe.instructions && recipe.instructions.length > 0 ? (
+                <ol className="space-y-3 text-gray-700">
+                  {recipe.instructions.map((step, i) => (
+                    <li key={i} className="flex items-start gap-3">
+                      <span className="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-purple-600 text-white text-sm font-bold rounded-full">
+                        {i + 1}
+                      </span>
+                      <span className="flex-1 pt-0.5">{step}</span>
+                    </li>
+                  ))}
+                </ol>
               ) : (
                 <p className="text-gray-500 italic">Instructions not available</p>
               )}

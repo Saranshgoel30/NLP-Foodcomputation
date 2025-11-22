@@ -24,6 +24,7 @@ SCHEMA = {
     'fields': [
         {'name': 'name', 'type': 'string'},
         {'name': 'description', 'type': 'string', 'optional': True},
+        {'name': 'instructions', 'type': 'string[]', 'optional': True},
         {'name': 'ingredients', 'type': 'string[]', 'facet': True},
         {'name': 'cuisine', 'type': 'string', 'optional': True, 'facet': True},
         {'name': 'course', 'type': 'string', 'optional': True, 'facet': True},
