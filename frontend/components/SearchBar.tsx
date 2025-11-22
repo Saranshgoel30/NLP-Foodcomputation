@@ -109,24 +109,50 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
     setSelectedIndex(-1)
   }
 
+  const handleSearchClick = () => {
+    if (value.trim()) {
+      onSearch(value)
+      setShowSuggestions(false)
+    }
+  }
+
   return (
     <div className="relative w-full max-w-4xl mx-auto">
-      <div className="relative">
-        <input
-          ref={inputRef}
-          type="text"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          onKeyDown={handleKeyDown}
-          onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-          placeholder="Search for 'spicy chicken dinner' or 'vegan dessert'..."
-          className="w-full px-6 py-4 pl-14 text-lg font-medium border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 shadow-lg bg-white text-gray-900 placeholder-gray-400"
-        />
-        <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
-        {loading && (
-          <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 text-purple-600 animate-spin" />
-        )}
+      <div className="relative flex gap-2">
+        <div className="relative flex-1">
+          <input
+            ref={inputRef}
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            placeholder="Search for 'spicy chicken dinner' or 'vegan dessert'..."
+            className="w-full px-6 py-4 pl-14 text-lg font-medium border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 shadow-lg bg-white text-gray-900 placeholder-gray-400"
+          />
+          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
+          {loading && (
+            <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 text-purple-600 animate-spin" />
+          )}
+        </div>
+        
+        {/* Search Button */}
+        <button
+          onClick={handleSearchClick}
+          disabled={!value.trim()}
+          className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-2xl hover:from-purple-700 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2"
+        >
+          <Search className="w-5 h-5" />
+          <span>Search</span>
+        </button>
       </div>
+
+      {/* Hint */}
+      {value.trim() && !showSuggestions && (
+        <div className="mt-2 text-sm text-gray-600 text-center">
+          💡 Press <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded">Enter</kbd> or click <strong>Search</strong> to find recipes
+        </div>
+      )}
 
       {/* Autocomplete Dropdown */}
       {showSuggestions && suggestions.length > 0 && (
