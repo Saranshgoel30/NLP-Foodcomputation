@@ -111,10 +111,13 @@ class SearchClient:
     def search(self, query: str, limit: int = 10, filters: Dict[str, str] = None, 
                excluded_ingredients: list = None, required_ingredients: list = None,
                time_constraint: dict = None):
+        # Typesense has a max of 250 results per page
+        per_page = min(limit * 3, 250)
+        
         search_params = {
             'q': query,
             'query_by': 'name,description,ingredients',
-            'per_page': limit * 3,  # Get more results for filtering
+            'per_page': per_page,
             'collection': COLLECTION_NAME,
             'facet_by': 'cuisine,diet,course'
         }
@@ -147,19 +150,54 @@ class SearchClient:
             search_params['vector_query'] = f"embedding:([{','.join(map(str, vector))}], k:50)"
 
         # Use multi_search to avoid URL length limits with vectors
-        results = self.client.multi_search.perform({'searches': [search_params]}, {})
-        result = results['results'][0]
+        try:
+            results = self.client.multi_search.perform({'searches': [search_params]}, {})
+            result = results['results'][0]
+            
+            # Validate result structure - check for Typesense errors
+            if 'error' in result:
+                print(f"❌ Typesense error: {result.get('error', 'Unknown error')}")
+                print(f"   Error code: {result.get('code', 'N/A')}")
+                return {
+                    'hits': [],
+                    'found': 0,
+                    'out_of': 0,
+                    'page': 1,
+                    'search_time_ms': 0
+                }
+            
+            if 'hits' not in result:
+                print(f"⚠️  Typesense returned unexpected structure: {result.keys()}")
+                print(f"   Result: {result}")
+                return {
+                    'hits': [],
+                    'found': 0,
+                    'out_of': 0,
+                    'page': 1,
+                    'search_time_ms': 0
+                }
+        except Exception as e:
+            print(f"❌ Typesense search error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'hits': [],
+                'found': 0,
+                'out_of': 0,
+                'page': 1,
+                'search_time_ms': 0
+            }
         
         # Post-process to filter by ingredients
         if excluded_ingredients or required_ingredients:
             filtered_hits = self._filter_by_ingredients(
-                result['hits'], 
+                result.get('hits', []), 
                 excluded_ingredients or [], 
                 required_ingredients or []
             )
             
             # If filtering removes ALL results, show original results with warning
-            if len(filtered_hits) == 0 and len(result['hits']) > 0:
+            if len(filtered_hits) == 0 and len(result.get('hits', [])) > 0:
                 print(f"⚠️  No recipes found matching exclusions: {excluded_ingredients}")
                 print(f"   Showing all {len(result['hits'])} results (may contain excluded ingredients)")
                 result['hits'] = result['hits'][:limit]
@@ -170,7 +208,7 @@ class SearchClient:
                 result['found'] = len(filtered_hits)
                 result['excluded_applied'] = True
         else:
-            result['hits'] = result['hits'][:limit]
+            result['hits'] = result.get('hits', [])[:limit]
         
         return result
     
@@ -201,10 +239,16 @@ class SearchClient:
         filtered = []
         
         for hit in hits:
+            # Get recipe data for comprehensive checking
             ingredients = hit['document'].get('ingredients', [])
+            recipe_name = hit['document'].get('name', '').lower()
+            description = hit['document'].get('description', '').lower()
+            
             # Convert to lowercase for comparison
             ingredients_lower = [ing.lower() for ing in ingredients]
-            ingredients_text = ' '.join(ingredients_lower)
+            
+            # Create comprehensive searchable text (title + ingredients + description)
+            searchable_text = f"{recipe_name} {' '.join(ingredients_lower)} {description}"
             
             # Check exclusions with comprehensive matching
             has_excluded = False
@@ -214,15 +258,25 @@ class SearchClient:
                 aliases = patterns_data.get('aliases', [excluded_canonical])
                 regex_patterns = patterns_data.get('patterns', [])
                 
-                # Check each ingredient in the recipe
+                # Method 1: Check title for obvious exclusions
+                for alias in aliases:
+                    if alias in recipe_name:
+                        has_excluded = True
+                        print(f"   ❌ Excluded '{recipe_name}' - found '{alias}' in title")
+                        break
+                
+                if has_excluded:
+                    break
+                
+                # Method 2: Check each ingredient in the recipe
                 for recipe_ing in ingredients_lower:
-                    # Method 1: Check if any alias appears in ingredient
+                    # Check if any alias appears in ingredient
                     for alias in aliases:
                         if alias in recipe_ing:
                             has_excluded = True
                             break
                     
-                    # Method 2: Use regex patterns if available
+                    # Use regex patterns if available
                     if not has_excluded and regex_patterns:
                         for pattern in regex_patterns:
                             try:
@@ -237,26 +291,54 @@ class SearchClient:
                 
                 if has_excluded:
                     break
+                
+                # Method 3: Check description as final catch-all
+                if not has_excluded:
+                    for alias in aliases:
+                        # Only check for whole word matches in description to avoid false positives
+                        if re.search(r'\b' + re.escape(alias) + r'\b', description):
+                            has_excluded = True
+                            print(f"   ❌ Excluded '{recipe_name}' - found '{alias}' in description")
+                            break
+                
+                if has_excluded:
+                    break
             
             if has_excluded:
                 continue
             
-            # Check requirements with comprehensive matching
+            # Check requirements with comprehensive matching (title + ingredients + description)
             has_all_required = True
             for required_canonical in required:
                 # Get all patterns for this ingredient
                 patterns_data = ingredient_patterns.get(required_canonical, {})
                 aliases = patterns_data.get('aliases', [required_canonical])
                 
-                # Check if any ingredient matches
+                # Check in multiple places: title first, then ingredients, then description
                 found = False
-                for recipe_ing in ingredients_lower:
+                
+                # 1. Check title
+                for alias in aliases:
+                    if alias in recipe_name:
+                        found = True
+                        break
+                
+                # 2. Check ingredients
+                if not found:
+                    for recipe_ing in ingredients_lower:
+                        for alias in aliases:
+                            if alias in recipe_ing:
+                                found = True
+                                break
+                        if found:
+                            break
+                
+                # 3. Check description as fallback
+                if not found:
                     for alias in aliases:
-                        if alias in recipe_ing:
+                        if re.search(r'\b' + re.escape(alias) + r'\b', description):
                             found = True
                             break
-                    if found:
-                        break
                 
                 if not found:
                     has_all_required = False

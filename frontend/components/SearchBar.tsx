@@ -62,18 +62,10 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
   }, [])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Handle Enter key for direct search (works even without suggestions)
+    // Handle Enter key - ALWAYS search what's in the input box
     if (e.key === 'Enter') {
       e.preventDefault()
-      if (showSuggestions && suggestions.length > 0 && selectedIndex >= 0) {
-        // User selected a suggestion with arrow keys
-        const selected = suggestions[selectedIndex]
-        onChange(selected)
-        onSearch(selected)
-      } else {
-        // Direct search with current input value
-        onSearch(value)
-      }
+      onSearch(value)
       setShowSuggestions(false)
       setSelectedIndex(-1)
       return
@@ -117,8 +109,8 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
   }
 
   return (
-    <div className="relative w-full max-w-4xl mx-auto">
-      <div className="relative flex gap-2">
+    <div className="relative w-full max-w-5xl mx-auto">
+      <div className="relative flex gap-3">
         <div className="relative flex-1">
           <input
             ref={inputRef}
@@ -127,12 +119,16 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
-          placeholder="Try 'butter chicken without onions' or 'कांदा नसलेली पनीर भाजी' or 'pyaz ke bina dal'..."
-          className="w-full px-6 py-4 pl-14 text-lg font-medium border-2 border-gray-300 rounded-2xl focus:outline-none focus:border-purple-500 focus:ring-4 focus:ring-purple-100 transition-all duration-200 shadow-lg bg-white text-gray-900 placeholder-gray-400"
+            placeholder="Search for recipes... (e.g., 'butter chicken', 'jain recipes', or in any language)"
+            className="w-full px-6 py-4 pl-14 text-base font-medium bg-slate-800 border-2 border-slate-600 rounded-lg focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all duration-200 text-white placeholder-gray-400"
           />
-          <Search className="absolute left-5 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
+          <div className="absolute left-4 top-1/2 -translate-y-1/2 p-2 bg-blue-600 rounded-md">
+            <Search className="w-4 h-4 text-white" />
+          </div>
           {loading && (
-            <Loader2 className="absolute right-5 top-1/2 -translate-y-1/2 w-6 h-6 text-purple-600 animate-spin" />
+            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+              <Loader2 className="w-5 h-5 text-blue-400 animate-spin" />
+            </div>
           )}
         </div>
         
@@ -140,7 +136,7 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
         <button
           onClick={handleSearchClick}
           disabled={!value.trim()}
-          className="px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-2xl hover:from-purple-700 hover:to-blue-700 disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed transition-all duration-200 shadow-lg hover:shadow-xl flex items-center gap-2"
+          className="px-8 py-4 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed transition-colors duration-200 flex items-center gap-2"
         >
           <Search className="w-5 h-5" />
           <span>Search</span>
@@ -149,8 +145,10 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
 
       {/* Hint */}
       {value.trim() && !showSuggestions && (
-        <div className="mt-2 text-sm text-gray-600 text-center">
-          💡 Press <kbd className="px-2 py-1 bg-gray-100 border border-gray-300 rounded">Enter</kbd> or click <strong>Search</strong> to find recipes
+        <div className="mt-2 text-sm text-gray-400 text-center flex items-center justify-center gap-2">
+          <span>Press</span>
+          <kbd className="px-2 py-1 bg-slate-800 border border-slate-600 rounded text-blue-400 font-mono text-xs">Enter</kbd>
+          <span>to search</span>
         </div>
       )}
 
@@ -158,11 +156,11 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
       {showSuggestions && suggestions.length > 0 && (
         <div
           ref={suggestionsRef}
-          className="absolute z-50 w-full mt-2 bg-white border-2 border-gray-200 rounded-xl shadow-2xl overflow-hidden"
+          className="absolute z-50 w-full mt-2 bg-slate-800 border-2 border-slate-600 rounded-lg shadow-2xl overflow-hidden"
         >
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-200">
-            <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
-              💡 Suggested Searches
+          <div className="px-4 py-2 bg-slate-700 border-b border-slate-600">
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">
+              Suggestions
             </p>
           </div>
           {suggestions.map((suggestion, index) => (
@@ -170,18 +168,14 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
               key={index}
               onClick={() => handleSuggestionClick(suggestion)}
               onMouseEnter={() => setSelectedIndex(index)}
-              className={`w-full px-6 py-3 text-left transition-colors duration-150 flex items-center gap-3 ${
+              className={`w-full px-5 py-3 text-left transition-all duration-200 flex items-center gap-3 border-b border-slate-700 last:border-b-0 ${
                 index === selectedIndex
-                  ? 'bg-purple-50 text-purple-900'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
+                  ? 'bg-blue-600 text-white'
+                  : 'hover:bg-slate-700 text-gray-300'
               }`}
             >
-              <Search className={`w-4 h-4 flex-shrink-0 ${
-                index === selectedIndex ? 'text-purple-600' : 'text-gray-400'
-              }`} />
-              <span className={`font-medium ${
-                index === selectedIndex ? 'text-purple-900' : 'text-gray-800'
-              }`}>
+              <Search className="w-4 h-4" />
+              <span className="font-medium text-sm">
                 {suggestion}
               </span>
             </button>

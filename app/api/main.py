@@ -21,6 +21,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from app.api.search_client import SearchClient
 from app.api.query_parser import QueryParser
 from app.api.enhanced_query_parser import enhanced_parser
+from app.api.smart_recipe_filter import smart_filter
 
 # Initialize both parsers - enhanced uses LLM, original is fallback
 query_parser = QueryParser()  # Keep for backward compatibility
@@ -157,26 +158,87 @@ async def search_recipes(
         # Get search client (lazy loads on first use)
         search_client = await get_search_client()
         
-        # Use smart filtering with LLM-extracted ingredients
-        results = search_client.search(
-            search_query,
-            limit=limit,
-            filters=filters,
-            excluded_ingredients=parsed.get('excluded_ingredients', []),
-            required_ingredients=parsed.get('required_ingredients', []),
-            time_constraint=parsed.get('cooking_time')
-        )
+        # STAGE 1: Get broad search results (semantic search)
+        # Get more results than requested for better filtering
+        broad_limit = min(limit * 3, 150)  # Get 3x results for filtering
+        
+        print(f"🔍 Stage 1: Semantic search for '{search_query}' (getting {broad_limit} results)")
+        
+        try:
+            results = search_client.search(
+                search_query,
+                limit=broad_limit,
+                filters=filters,
+                excluded_ingredients=[],  # Don't filter yet - let LLM do smart filtering
+                required_ingredients=[],  # Don't filter yet - let LLM do smart filtering
+                time_constraint=parsed.get('cooking_time')
+            )
+            
+            # Validate results structure
+            if not isinstance(results, dict) or 'hits' not in results:
+                print(f"❌ Invalid results structure: {type(results)}")
+                results = {'hits': [], 'found': 0}
+                
+        except Exception as e:
+            print(f"❌ Search error: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            results = {'hits': [], 'found': 0}
+        
+        # STAGE 2: Smart LLM-powered filtering
+        excluded_ingredients = parsed.get('excluded_ingredients', [])
+        required_ingredients = parsed.get('required_ingredients', [])
+        dietary_preferences = parsed.get('dietary_preferences', [])
+        
+        if (excluded_ingredients or required_ingredients or dietary_preferences) and results.get('hits'):
+            print(f"🤖 Stage 2: LLM smart filtering")
+            print(f"   Excluded: {excluded_ingredients}")
+            print(f"   Required: {required_ingredients}")
+            print(f"   Dietary: {dietary_preferences}")
+            
+            try:
+                filtered_results = await smart_filter.filter_recipes_smart(
+                    results['hits'],
+                    original_query=q,
+                    excluded_ingredients=excluded_ingredients,
+                    required_ingredients=required_ingredients,
+                    dietary_preferences=dietary_preferences
+                )
+                
+                # Combine results: perfect first, then good, then possible
+                final_hits = (
+                    filtered_results['perfect_matches'] +
+                    filtered_results['good_matches'] +
+                    filtered_results['possible_matches']
+                )[:limit]
+            except Exception as e:
+                print(f"❌ Smart filtering error: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                final_hits = results.get('hits', [])[:limit]
+                final_found = len(final_hits)
+                excluded_count = 0
+            else:
+                final_found = len(final_hits)
+                excluded_count = len(filtered_results.get('excluded', []))
+                print(f"✅ Stage 2 complete: {final_found} matches (excluded {excluded_count} recipes)")
+        else:
+            # No filtering needed
+            final_hits = results.get('hits', [])[:limit]
+            final_found = len(final_hits)
+            excluded_count = 0
         
         duration = (time.time() - start) * 1000  # Convert to ms
         
         # Return with translation info for UI display
         return {
-            "hits": results['hits'],
-            "found": results['found'],
+            "hits": final_hits,
+            "found": final_found,
             "query": q,
             "translated_query": translated_query if translated_query != q else None,
             "detected_language": parsed.get('language_detected'),
             "llm_enabled": enhanced_parser.use_llm,
+            "excluded_count": excluded_count if excluded_count > 0 else None,
             "duration_ms": round(duration, 2)
         }
     except Exception as e:

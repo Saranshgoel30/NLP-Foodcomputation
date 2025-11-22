@@ -72,31 +72,40 @@ export default function Home() {
     }
   }, [filters])
 
+  // Real-time filtering: re-search when filters change
+  useEffect(() => {
+    if (query.trim() && results) {
+      handleSearch(query)
+    }
+  }, [filters])
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50">
+    <div className="min-h-screen bg-slate-950 text-white">
       {/* Header */}
-      <header className="bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-2xl">
-        <div className="container mx-auto px-4 py-12 md:py-16">
+      <header className="bg-slate-900 border-b border-slate-800 shadow-xl">
+        <div className="container mx-auto px-4 py-8">
           <div className="text-center">
             <div className="flex justify-center mb-4">
-              <ChefHat className="w-16 h-16" />
+              <ChefHat className="w-16 h-16 text-blue-500" />
             </div>
-            <h1 className="text-5xl md:text-6xl font-bold mb-4 tracking-tight">
-              Food Intelligence Platform
+            <h1 className="text-5xl md:text-6xl font-bold mb-3 tracking-tight text-white">
+              Food Intelligence
             </h1>
-            <p className="text-xl md:text-2xl text-purple-100">
-              Discover delicious recipes with AI-powered semantic search
+            <p className="text-lg md:text-xl text-gray-400">
+              AI-Powered Multilingual Recipe Discovery
             </p>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto px-4 py-8">
+      <div className="relative container mx-auto px-4 py-8">
         <div className="flex flex-col lg:flex-row gap-8">
           {/* Sidebar */}
           <aside className="lg:w-64 flex-shrink-0">
-            <FilterSidebar filters={filters} onChange={setFilters} />
+            <div className="sticky top-8">
+              <FilterSidebar filters={filters} onChange={setFilters} />
+            </div>
           </aside>
 
           {/* Search Area */}
@@ -111,8 +120,9 @@ export default function Home() {
 
             {/* Loading State */}
             {loading && (
-              <div className="flex items-center justify-center py-20">
-                <Loader2 className="w-12 h-12 animate-spin text-purple-600" />
+              <div className="flex flex-col items-center justify-center py-20">
+                <Loader2 className="w-12 h-12 animate-spin text-blue-500" />
+                <p className="mt-4 text-gray-400">Searching recipes...</p>
               </div>
             )}
 
@@ -123,23 +133,30 @@ export default function Home() {
                 <div className="mb-6 space-y-4">
                   {/* Translation Info */}
                   {results.translated_query && results.translated_query !== results.query && (
-                    <div className="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded-lg shadow-sm border-2 border-green-200">
-                      <div className="flex items-start gap-3">
-                        <Globe className="w-6 h-6 text-green-600 mt-0.5 flex-shrink-0" />
+                    <div className="p-5 bg-slate-800 rounded-lg border border-green-600 shadow-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="p-2.5 bg-green-600 rounded-md">
+                          <Globe className="w-5 h-5 text-white" />
+                        </div>
                         <div className="flex-1">
-                          <p className="font-semibold text-gray-800 mb-2">
-                            🌍 Multilingual Query Detected
+                          <p className="font-bold text-base mb-3 text-white">
+                            Translation Applied
                           </p>
-                          <div className="space-y-1 text-sm">
-                            <p className="text-gray-700">
-                              <span className="font-medium">Original:</span> "{results.query}"
-                            </p>
-                            <p className="text-gray-700">
-                              <span className="font-medium">Translated to English:</span> "{results.translated_query}"
-                            </p>
+                          <div className="space-y-2 text-sm">
+                            <div className="p-3 bg-slate-900 rounded-md border border-slate-700">
+                              <span className="text-gray-400 font-medium">Original Query:</span>
+                              <p className="text-white mt-1">"{results.query}"</p>
+                            </div>
+                            <div className="p-3 bg-slate-900 rounded-md border border-green-600">
+                              <span className="text-green-400 font-medium">Translated To:</span>
+                              <p className="text-white mt-1">"{results.translated_query}"</p>
+                            </div>
                             {results.detected_language && (
-                              <p className="text-xs text-gray-600 mt-2">
-                                Language detected: <span className="font-semibold">{results.detected_language}</span>
+                              <p className="text-xs text-gray-400 flex items-center gap-2 mt-2">
+                                <span className="px-2 py-1 bg-green-600 rounded-md font-semibold text-white">
+                                  {results.detected_language}
+                                </span>
+                                <span>detected</span>
                               </p>
                             )}
                           </div>
@@ -150,16 +167,20 @@ export default function Home() {
                   
                   {/* Exclusion Warning */}
                   {results.excluded_applied === false && (
-                    <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg shadow-sm border-2 border-yellow-300">
-                      <div className="flex items-start gap-3">
-                        <div className="text-2xl flex-shrink-0">⚠️</div>
+                    <div className="p-5 bg-slate-800 rounded-lg border border-yellow-600 shadow-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="p-2.5 bg-yellow-600 rounded-md">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                          </svg>
+                        </div>
                         <div className="flex-1">
-                          <p className="font-semibold text-gray-800 mb-1">
-                            No Perfect Matches Found
+                          <p className="font-bold text-base mb-2 text-white">
+                            No Perfect Matches
                           </p>
-                          <p className="text-sm text-gray-700">
-                            No recipes matched your exclusion requirements perfectly. 
-                            Showing all relevant results - please check ingredients carefully.
+                          <p className="text-sm text-gray-300 leading-relaxed">
+                            Your exclusion filters were too strict. Showing all relevant results - 
+                            <span className="text-yellow-400 font-semibold"> please check ingredients carefully</span>.
                           </p>
                         </div>
                       </div>
@@ -167,32 +188,44 @@ export default function Home() {
                   )}
                   
                   {/* Results Summary */}
-                  <div className="p-4 bg-white rounded-lg shadow-sm border border-gray-200">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <p className="text-lg font-semibold text-gray-800">
-                        📊 Found <span className="text-purple-600">{results.found}</span> recipes 
-                        in <span className="text-purple-600">{results.duration_ms}ms</span>
-                      </p>
+                  <div className="p-5 bg-slate-800 rounded-lg border border-slate-700 shadow-xl">
+                    <div className="flex items-center justify-between flex-wrap gap-4">
+                      <div className="flex items-center gap-6">
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Results Found</p>
+                          <p className="text-2xl font-bold text-white">
+                            {results.found}
+                          </p>
+                        </div>
+                        <div className="h-10 w-px bg-slate-700"></div>
+                        <div>
+                          <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Response Time</p>
+                          <p className="text-2xl font-bold text-white">
+                            {results.duration_ms}<span className="text-sm text-gray-400 ml-1">ms</span>
+                          </p>
+                        </div>
+                      </div>
                       {results.llm_enabled && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-100 to-blue-100 rounded-full">
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                          <span className="text-xs font-semibold text-purple-700">AI-Powered Search</span>
+                        <div className="flex items-center gap-2 px-3 py-2 bg-blue-600 rounded-md">
+                          <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                          <span className="text-sm font-bold text-white">AI-Powered</span>
                         </div>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-4">
-                  {results.hits.map((hit, index) => (
-                    <RecipeCard key={index} recipe={hit.document} index={index + 1} />
-                  ))}
-                </div>
-
-                {results.hits.length === 0 && (
-                  <div className="text-center py-20">
-                    <Search className="w-16 h-16 mx-auto text-gray-400 mb-4" />
-                    <p className="text-xl text-gray-600">No recipes found. Try a different search!</p>
+                {results.hits.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {results.hits.map((hit, index) => (
+                      <RecipeCard key={index} recipe={hit.document} />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-20 bg-slate-800 rounded-lg border border-slate-700">
+                    <Search className="w-12 h-12 mx-auto text-gray-500 mb-4" />
+                    <p className="text-lg text-gray-400">No recipes found matching your criteria.</p>
+                    <p className="text-sm text-gray-500 mt-2">Try adjusting your search or filters.</p>
                   </div>
                 )}
               </div>
@@ -200,30 +233,29 @@ export default function Home() {
 
             {/* Empty State */}
             {!loading && !results && (
-              <div className="text-center py-12">
-                <h3 className="text-2xl font-semibold text-gray-800 mb-8">
-                  🔍 Try searching for...
+              <div className="py-12">
+                <h3 className="text-xl font-bold text-white mb-6 text-center">
+                  Try searching for...
                 </h3>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl mx-auto mb-12">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl mx-auto mb-12">
                   {[
-                    '🚫 Butter chicken without onions and tomatoes',
-                    '⚡ Quick pasta under 20 minutes',
-                    '🥗 Jain recipes (no onion no garlic)',
-                    '🌶️ Spicy curry with garlic and ginger',
-                    '🥞 Chocolate dessert without eggs',
-                    '🇮🇳 कांदा नसलेली पनीर भाजी',
-                    '🍛 pyaz ke bina dal recipe',
-                    '🔥 bina tamatar ka chicken'
+                    'Butter chicken without onions and tomatoes',
+                    'Quick pasta under 20 minutes',
+                    'Jain recipes (no onion no garlic)',
+                    'Spicy curry with garlic and ginger',
+                    'Chocolate dessert without eggs',
+                    'कांदा नसलेली पनीर भाजी',
+                    'pyaz ke bina dal recipe',
+                    'bina tamatar ka chicken'
                   ].map((example, i) => (
                     <button
                       key={i}
                       onClick={() => {
-                        const cleanQuery = example.replace(/[🥞🍰🐟⚡🌶️🥗]/g, '').trim()
-                        setQuery(cleanQuery)
-                        handleSearch(cleanQuery)
+                        setQuery(example)
+                        handleSearch(example)
                       }}
-                      className="p-4 bg-white rounded-xl border-2 border-gray-200 hover:border-purple-500 hover:shadow-lg transition-all duration-200 text-left font-medium text-gray-700 hover:text-purple-600"
+                      className="p-4 bg-slate-800 rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-700 transition-all duration-200 text-left font-medium text-gray-300 hover:text-white"
                     >
                       {example}
                     </button>
@@ -231,21 +263,21 @@ export default function Home() {
                 </div>
 
                 {/* Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mx-auto">
-                  <div className="p-6 bg-gradient-to-br from-purple-100 to-purple-50 rounded-xl">
-                    <Utensils className="w-10 h-10 text-purple-600 mx-auto mb-3" />
-                    <p className="text-3xl font-bold text-purple-900">9,600+</p>
-                    <p className="text-sm text-purple-700 font-medium">Total Recipes</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto">
+                  <div className="p-6 bg-slate-800 rounded-lg border border-slate-700 text-center">
+                    <Utensils className="w-8 h-8 text-blue-500 mx-auto mb-3" />
+                    <p className="text-3xl font-bold text-white mb-1">9,600+</p>
+                    <p className="text-sm text-gray-400 font-medium">Total Recipes</p>
                   </div>
-                  <div className="p-6 bg-gradient-to-br from-blue-100 to-blue-50 rounded-xl">
-                    <Globe className="w-10 h-10 text-blue-600 mx-auto mb-3" />
-                    <p className="text-3xl font-bold text-blue-900">15+</p>
-                    <p className="text-sm text-blue-700 font-medium">Cuisines</p>
+                  <div className="p-6 bg-slate-800 rounded-lg border border-slate-700 text-center">
+                    <Globe className="w-8 h-8 text-green-500 mx-auto mb-3" />
+                    <p className="text-3xl font-bold text-white mb-1">15+</p>
+                    <p className="text-sm text-gray-400 font-medium">Cuisines</p>
                   </div>
-                  <div className="p-6 bg-gradient-to-br from-green-100 to-green-50 rounded-xl">
-                    <Clock className="w-10 h-10 text-green-600 mx-auto mb-3" />
-                    <p className="text-3xl font-bold text-green-900">7+</p>
-                    <p className="text-sm text-green-700 font-medium">Diet Types</p>
+                  <div className="p-6 bg-slate-800 rounded-lg border border-slate-700 text-center">
+                    <Clock className="w-8 h-8 text-purple-500 mx-auto mb-3" />
+                    <p className="text-3xl font-bold text-white mb-1">7+</p>
+                    <p className="text-sm text-gray-400 font-medium">Diet Types</p>
                   </div>
                 </div>
               </div>
