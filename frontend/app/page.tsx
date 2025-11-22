@@ -34,6 +34,7 @@ interface SearchResult {
   translated_query?: string
   detected_language?: string
   llm_enabled?: boolean
+  excluded_applied?: boolean
 }
 
 export default function Home() {
@@ -142,6 +143,24 @@ export default function Home() {
                               </p>
                             )}
                           </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Exclusion Warning */}
+                  {results.excluded_applied === false && (
+                    <div className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 rounded-lg shadow-sm border-2 border-yellow-300">
+                      <div className="flex items-start gap-3">
+                        <div className="text-2xl flex-shrink-0">⚠️</div>
+                        <div className="flex-1">
+                          <p className="font-semibold text-gray-800 mb-1">
+                            No Perfect Matches Found
+                          </p>
+                          <p className="text-sm text-gray-700">
+                            No recipes matched your exclusion requirements perfectly. 
+                            Showing all relevant results - please check ingredients carefully.
+                          </p>
                         </div>
                       </div>
                     </div>
