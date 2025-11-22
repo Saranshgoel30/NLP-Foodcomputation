@@ -22,9 +22,11 @@ class LLMService:
     
     def __init__(self):
         self.provider = LLMConfig.get_available_provider()
+        self.failed_providers = set()  # Track failed providers for session
+        
         if not self.provider:
             print("⚠️  No LLM API key found. Using rule-based fallback.")
-            print("   Set DEEPSEEK_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY for enhanced features.")
+            print("   Set DEEPSEEK_API_KEY, XAI_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY for enhanced features.")
         else:
             config = LLMConfig.get_config(self.provider)
             print(f"✅ LLM Service initialized with {self.provider.value} ({config['model']})")
@@ -55,28 +57,68 @@ class LLMService:
         self, 
         messages: List[Dict[str, str]], 
         temperature: float = 0.3,
-        max_tokens: int = 2000
+        max_tokens: int = 2000,
+        retry_with_fallback: bool = True
     ) -> Optional[str]:
-        """Call LLM API with fallback support"""
+        """Call LLM API with automatic fallback to alternative providers"""
         if not self.provider:
             return None
         
-        config = LLMConfig.get_config(self.provider)
-        api_key = LLMConfig.get_api_key(self.provider)
+        # Try current provider first
+        result = await self._try_provider(self.provider, messages, temperature, max_tokens)
         
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
+        # If failed and we should retry, try other providers
+        if result is None and retry_with_fallback:
+            print(f"🔄 Trying fallback providers...")
+            for provider in LLMConfig.PROVIDERS:
+                # Skip current provider and already failed providers
+                if provider == self.provider or provider in self.failed_providers:
+                    continue
+                
+                # Check if API key exists
+                if not LLMConfig.get_api_key(provider):
+                    continue
+                
+                print(f"   Attempting {provider.value}...")
+                result = await self._try_provider(provider, messages, temperature, max_tokens)
+                
+                if result is not None:
+                    # Success! Switch to this provider for future calls
+                    print(f"✅ Switched to {provider.value}")
+                    self.provider = provider
+                    return result
+                else:
+                    self.failed_providers.add(provider)
         
-        payload = {
-            "model": config["model"],
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": max_tokens
-        }
-        
+        return result
+    
+    async def _try_provider(
+        self,
+        provider: LLMProvider,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_tokens: int
+    ) -> Optional[str]:
+        """Try a single provider"""
         try:
+            config = LLMConfig.get_config(provider)
+            api_key = LLMConfig.get_api_key(provider)
+            
+            if not api_key:
+                return None
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": config["model"],
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            }
+            
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     f"{config['api_base']}/chat/completions",
@@ -88,11 +130,17 @@ class LLMService:
                     result = response.json()
                     return result["choices"][0]["message"]["content"]
                 else:
-                    print(f"❌ LLM API error: {response.status_code} - {response.text}")
+                    error_text = response.text[:200]  # Truncate for cleaner logs
+                    print(f"❌ {provider.value} API error: {response.status_code} - {error_text}")
+                    
+                    # Mark provider as failed if it's a balance/auth issue
+                    if response.status_code in [401, 402, 403]:
+                        self.failed_providers.add(provider)
+                    
                     return None
                     
         except Exception as e:
-            print(f"❌ LLM API call failed: {str(e)}")
+            print(f"❌ {provider.value} API call failed: {str(e)}")
             return None
     
     async def understand_query(self, query: str) -> Dict[str, Any]:
