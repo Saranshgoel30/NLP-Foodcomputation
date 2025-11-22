@@ -111,15 +111,29 @@ class SearchClient:
     def search(self, query: str, limit: int = 10, filters: Dict[str, str] = None, 
                excluded_ingredients: list = None, required_ingredients: list = None,
                time_constraint: dict = None):
-        # Typesense has a max of 250 results per page
-        per_page = min(limit * 3, 250)
+        # Typesense has a max of 250 results per page - always fetch max for comprehensive results
+        per_page = 250
         
         search_params = {
             'q': query,
             'query_by': 'name,description,ingredients',
             'per_page': per_page,
             'collection': COLLECTION_NAME,
-            'facet_by': 'cuisine,diet,course'
+            'facet_by': 'cuisine,diet,course',
+            # OPTIMIZATION: Exhaustive search for comprehensive results
+            'exhaustive_search': 'true',
+            # OPTIMIZATION: Consider 100 prefix/typo variations (default is only 4!)
+            'max_candidates': 100,
+            # OPTIMIZATION: Don't drop query words too early
+            'drop_tokens_threshold': 10,
+            # OPTIMIZATION: Be strict with typos initially (only after 100 results)
+            'typo_tokens_threshold': 100,
+            # OPTIMIZATION: Sum scores across fields for better ranking
+            'text_match_type': 'sum_score',
+            # OPTIMIZATION: Prioritize recipes matching more fields
+            'prioritize_num_matching_fields': 'true',
+            # OPTIMIZATION: Exact matches get highest priority
+            'prioritize_exact_match': 'true'
         }
         
         if filters:

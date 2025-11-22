@@ -79,39 +79,116 @@ class SmartRecipeFilter:
             }
             recipe_summaries.append(summary)
         
-        # Build smart filtering prompt
-        prompt = f"""You are an expert recipe analyzer. Analyze these recipes and categorize them based on the user's requirements.
+        # Build REVOLUTIONARY scoring prompt
+        prompt = f"""You are a MASTER CHEF + FOOD SCIENTIST + CULTURAL EXPERT evaluating recipe relevance.
+
+MISSION: Score each recipe on a scale of 0-100 based on MULTI-DIMENSIONAL relevance.
 
 USER QUERY: "{original_query}"
+DETECTED CONTEXT: {dietary_preferences if dietary_preferences else "general"}
 
-REQUIREMENTS:
-- Excluded ingredients: {excluded_ingredients if excluded_ingredients else "None"}
-- Required ingredients: {required_ingredients if required_ingredients else "None (just match the query)"}
+CRITICAL CONSTRAINTS (MUST SATISFY):
+- HARD EXCLUSIONS (allergy/religion): {excluded_ingredients if excluded_ingredients else "None"}
+- Required ingredients: {required_ingredients if required_ingredients else "Match query intent"}
 - Dietary preferences: {dietary_preferences if dietary_preferences else "None"}
 
-RECIPES TO ANALYZE:
+RECIPES TO SCORE (max 50):
 {json.dumps(recipe_summaries, indent=2)}
 
-IMPORTANT RULES:
-1. **Exclusions are STRICT**: If a recipe contains ANY form of an excluded ingredient (in name OR ingredients), mark it as "excluded"
-2. **Requirements are FLEXIBLE**: If no specific requirements, just match the query intent
-3. **Be smart about variations**: 
-   - "onion" includes: onions, onion paste, onion powder, spring onions, shallots
-   - "garlic" includes: garlic, garlic paste, garlic powder
-   - "paneer" includes: paneer, cottage cheese
-4. **Title matters**: Check recipe names for excluded ingredients too (e.g., "Onion Pakora" should be excluded if onions are excluded)
-5. **Query intent**: For "butter chicken", any butter chicken recipe is good even if ingredient list varies
+SCORING RUBRIC (100 points total):
 
-RESPOND with JSON in this EXACT format:
+🎯 DIMENSION 1: LITERAL MATCH (0-25 points)
+- Recipe name contains query terms? +10 points
+- Exact ingredient matches? +10 points
+- Cuisine type matches? +5 points
+
+🧠 DIMENSION 2: SEMANTIC MATCH (0-25 points)
+- Satisfies user's INTENT? +15 points
+  Example: "comfort food" → traditional, familiar dishes
+  Example: "quick meal" → <30 min prep time
+- Similar cooking technique? +5 points
+- Cultural similarity? +5 points
+
+⚖️ DIMENSION 3: CONSTRAINT SATISFACTION (0-25 points)
+- HARD CONSTRAINTS:
+  * Contains excluded ingredient? INSTANT -100 (FAILS completely)
+  * Variations count! "onion" = onions, onion paste, pyaz, kanda, spring onion, shallot
+  * Check NAME too! "Onion Pakora" fails if onions excluded
+- SOFT CONSTRAINTS:
+  * Missing preferred ingredient? -5 points
+  * Wrong meal type? -3 points
+
+🌟 DIMENSION 4: CONTEXTUAL FIT (0-25 points)
+- Matches meal type context? +8 points
+- Appropriate difficulty level? +5 points
+- Seasonal match? +5 points
+- Social context (family/party/solo)? +7 points
+
+INTELLIGENCE RULES:
+1. **Exclusion variations (CRITICAL)**:
+   - onion: onions, onion paste, onion powder, spring onion, shallot, scallion, pyaz, kanda, vengayam, ullipaya, peyaj, dungri
+   - garlic: garlic paste, garlic powder, lahsun, lasun, poondu, velluli, rasun, lasan
+   - paneer: cottage cheese, Indian cottage cheese
+   
+2. **Query intent examples**:
+   - "butter chicken" → North Indian, creamy, tomato-based, mild-medium spice
+   - "jain food" → NO onion/garlic/root veg AT ALL (auto -100 if present)
+   - "quick meal" → prep_time <30 min, simple cooking
+   - "comfort food" → traditional, familiar, satisfying
+
+3. **Name checking**: 
+   - "Onion Bhaji" automatically -100 if onions excluded
+   - "Lahsuni Dal" automatically -100 if garlic excluded
+
+RESPOND with JSON (EXACT format):
 {{
-    "perfect_matches": [0, 2, 5],  // Recipe indices that perfectly match all requirements
-    "good_matches": [1, 3],        // Recipes that match well but might be missing minor details
-    "possible_matches": [4],       // Recipes that partially match
-    "excluded": [6, 7, 8],         // Recipes with excluded ingredients or wrong type
-    "reasoning": "Brief explanation of categorization logic"
+  "scored_recipes": [
+    {{
+      "index": 0,
+      "relevance_score": 95,
+      "literal_match": 23,
+      "semantic_match": 24,
+      "constraint_satisfaction": 25,
+      "contextual_fit": 23,
+      "reasoning": "Perfect match: Paneer Tikka, no onion, North Indian, vegetarian",
+      "constraint_violations": [],
+      "bonuses": ["vegetarian", "north_indian", "protein_rich"],
+      "category": "perfect"
+    }},
+    {{
+      "index": 1,
+      "relevance_score": 75,
+      "literal_match": 18,
+      "semantic_match": 20,
+      "constraint_satisfaction": 20,
+      "contextual_fit": 17,
+      "reasoning": "Good match: Similar dish, slightly different spice profile",
+      "constraint_violations": [],
+      "bonuses": ["vegetarian"],
+      "category": "good"
+    }},
+    {{
+      "index": 2,
+      "relevance_score": -100,
+      "literal_match": 0,
+      "semantic_match": 0,
+      "constraint_satisfaction": -100,
+      "contextual_fit": 0,
+      "reasoning": "EXCLUDED: Contains onion paste in ingredients",
+      "constraint_violations": ["onion"],
+      "bonuses": [],
+      "category": "excluded"
+    }}
+  ]
 }}
 
-Return ONLY valid JSON, no additional text."""
+CATEGORIZATION THRESHOLDS:
+- perfect_matches: score >= 85
+- good_matches: score 70-84
+- possible_matches: score 50-69
+- excluded: score < 50 OR constraint_violations present
+
+Return ONLY valid JSON, no markdown, no explanations outside JSON."""
 
         try:
             messages = [{"role": "user", "content": prompt}]
@@ -129,20 +206,64 @@ Return ONLY valid JSON, no additional text."""
                 
                 result = json.loads(response_clean.strip())
                 
-                # Build categorized results
+                # Process scored recipes
+                scored_recipes = result.get('scored_recipes', [])
+                
+                # Sort by relevance score (descending)
+                scored_recipes.sort(key=lambda x: x.get('relevance_score', 0), reverse=True)
+                
+                # Categorize based on scores and violations
+                perfect_matches = []
+                good_matches = []
+                possible_matches = []
+                excluded = []
+                
+                for scored in scored_recipes:
+                    idx = scored.get('index', -1)
+                    if idx < 0 or idx >= len(recipes):
+                        continue
+                    
+                    recipe = recipes[idx]
+                    score = scored.get('relevance_score', 0)
+                    violations = scored.get('constraint_violations', [])
+                    category = scored.get('category', 'possible')
+                    
+                    # Add scoring metadata to recipe
+                    if 'document' not in recipe:
+                        recipe['document'] = {}
+                    recipe['document']['_llm_score'] = score
+                    recipe['document']['_llm_reasoning'] = scored.get('reasoning', '')
+                    
+                    # Categorize
+                    if violations or score < 0:
+                        excluded.append(recipe)
+                    elif score >= 85 or category == 'perfect':
+                        perfect_matches.append(recipe)
+                    elif score >= 70 or category == 'good':
+                        good_matches.append(recipe)
+                    elif score >= 50 or category == 'possible':
+                        possible_matches.append(recipe)
+                    else:
+                        excluded.append(recipe)
+                
                 categorized = {
-                    "perfect_matches": [recipes[i] for i in result.get('perfect_matches', []) if i < len(recipes)],
-                    "good_matches": [recipes[i] for i in result.get('good_matches', []) if i < len(recipes)],
-                    "possible_matches": [recipes[i] for i in result.get('possible_matches', []) if i < len(recipes)],
-                    "excluded": [recipes[i] for i in result.get('excluded', []) if i < len(recipes)],
-                    "reasoning": result.get('reasoning', '')
+                    "perfect_matches": perfect_matches,
+                    "good_matches": good_matches,
+                    "possible_matches": possible_matches,
+                    "excluded": excluded,
+                    "reasoning": f"Scored {len(scored_recipes)} recipes using multi-dimensional relevance"
                 }
                 
-                print(f"🤖 LLM Smart Filter: {len(categorized['perfect_matches'])} perfect, "
-                      f"{len(categorized['good_matches'])} good, "
-                      f"{len(categorized['possible_matches'])} possible matches")
-                if categorized['reasoning']:
-                    print(f"   Reasoning: {categorized['reasoning']}")
+                print(f"🤖 LLM Smart Scoring: {len(perfect_matches)} perfect (≥85), "
+                      f"{len(good_matches)} good (70-84), "
+                      f"{len(possible_matches)} possible (50-69), "
+                      f"{len(excluded)} excluded (<50 or violations)")
+                
+                # Show top 3 scores
+                if scored_recipes[:3]:
+                    print(f"   Top 3 scores:")
+                    for i, s in enumerate(scored_recipes[:3], 1):
+                        print(f"      {i}. Score {s.get('relevance_score', 0)}: {s.get('reasoning', 'N/A')[:60]}")
                 
                 return categorized
             
