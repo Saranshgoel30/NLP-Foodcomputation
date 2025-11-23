@@ -29,25 +29,32 @@ interface Recipe {
 interface SearchResult {
   hits: Recipe[]
   found: number
+  page: number
+  limit: number
+  total_pages: number
   query: string
   duration_ms: number
   translated_query?: string
   detected_language?: string
   llm_enabled?: boolean
   excluded_applied?: boolean
+  fallback_message?: string
+  is_fallback?: boolean
+  excluded_count?: number
 }
 
 export default function Home() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult | null>(null)
   const [loading, setLoading] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
   const [filters, setFilters] = useState({
     cuisine: '',
     diet: '',
     course: ''
   })
 
-  const handleSearch = useCallback(async (searchQuery: string) => {
+  const handleSearch = useCallback(async (searchQuery: string, page: number = 1) => {
     if (!searchQuery.trim()) {
       setResults(null)
       return
@@ -57,7 +64,8 @@ export default function Home() {
     try {
       const params = new URLSearchParams({
         q: searchQuery,
-        limit: '50',
+        limit: '20',
+        page: page.toString(),
         ...(filters.cuisine && { cuisine: filters.cuisine }),
         ...(filters.diet && { diet: filters.diet }),
         ...(filters.course && { course: filters.course })
@@ -65,6 +73,7 @@ export default function Home() {
 
       const response = await axios.get(`${API_URL}/api/search?${params}`)
       setResults(response.data)
+      setCurrentPage(page)
     } catch (error) {
       console.error('Search failed:', error)
     } finally {
@@ -72,10 +81,16 @@ export default function Home() {
     }
   }, [filters])
 
+  const handlePageChange = (page: number) => {
+    handleSearch(query, page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
   // Real-time filtering: re-search when filters change
   useEffect(() => {
     if (query.trim() && results) {
-      handleSearch(query)
+      setCurrentPage(1)
+      handleSearch(query, 1)
     }
   }, [filters])
 
@@ -187,40 +202,183 @@ export default function Home() {
                     </div>
                   )}
                   
-                  {/* Results Summary */}
-                  <div className="p-5 bg-slate-800 rounded-lg border border-slate-700 shadow-xl">
-                    <div className="flex items-center justify-between flex-wrap gap-4">
-                      <div className="flex items-center gap-6">
-                        <div>
-                          <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Results Found</p>
-                          <p className="text-2xl font-bold text-white">
-                            {results.found}
-                          </p>
+                  {/* Fallback/Alternative Suggestions Message */}
+                  {results.fallback_message && (
+                    <div className="p-5 bg-slate-800 rounded-lg border border-orange-600 shadow-xl">
+                      <div className="flex items-start gap-4">
+                        <div className="p-2.5 bg-orange-600 rounded-md">
+                          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
                         </div>
-                        <div className="h-10 w-px bg-slate-700"></div>
-                        <div>
-                          <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Response Time</p>
-                          <p className="text-2xl font-bold text-white">
-                            {results.duration_ms}<span className="text-sm text-gray-400 ml-1">ms</span>
+                        <div className="flex-1">
+                          <p className="font-bold text-base mb-2 text-white">
+                            {results.is_fallback ? 'Showing Alternative Recipes' : 'No Results Found'}
+                          </p>
+                          <p className="text-sm text-gray-300 leading-relaxed">
+                            {results.fallback_message}
                           </p>
                         </div>
                       </div>
-                      {results.llm_enabled && (
-                        <div className="flex items-center gap-2 px-3 py-2 bg-blue-600 rounded-md">
-                          <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
-                          <span className="text-sm font-bold text-white">AI-Powered</span>
-                        </div>
-                      )}
                     </div>
-                  </div>
+                  )}
+                  
+                  {/* Results Summary - Only show if we have results */}
+                  {results.found > 0 && (
+                    <div className="p-5 bg-slate-800 rounded-lg border border-slate-700 shadow-xl">
+                      <div className="flex items-center justify-between flex-wrap gap-4">
+                        <div className="flex items-center gap-6">
+                          <div>
+                            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Results Found</p>
+                            <p className="text-2xl font-bold text-white">
+                              {results.found}
+                              {results.is_fallback && (
+                                <span className="text-sm text-orange-400 ml-2">(alternatives)</span>
+                              )}
+                            </p>
+                          </div>
+                          <div className="h-10 w-px bg-slate-700"></div>
+                          <div>
+                            <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Response Time</p>
+                            <p className="text-2xl font-bold text-white">
+                              {results.duration_ms}<span className="text-sm text-gray-400 ml-1">ms</span>
+                            </p>
+                          </div>
+                          {results.excluded_count && results.excluded_count > 0 && (
+                            <>
+                              <div className="h-10 w-px bg-slate-700"></div>
+                              <div>
+                                <p className="text-xs text-gray-400 mb-1 uppercase tracking-wide font-semibold">Filtered Out</p>
+                                <p className="text-2xl font-bold text-red-400">
+                                  {results.excluded_count}
+                                </p>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                        {results.llm_enabled && (
+                          <div className="flex items-center gap-2 px-3 py-2 bg-blue-600 rounded-md">
+                            <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+                            <span className="text-sm font-bold text-white">AI-Powered</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {results.hits.length > 0 ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {results.hits.map((hit, index) => (
-                      <RecipeCard key={index} recipe={hit.document} />
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {results.hits.map((hit, index) => (
+                        <RecipeCard key={index} recipe={hit.document} />
+                      ))}
+                    </div>
+
+                    {/* Pagination Controls */}
+                    {results.total_pages > 1 && (
+                      <div className="mt-8 flex flex-col items-center gap-4">
+                        {/* Page Info */}
+                        <div className="text-sm text-gray-400">
+                          Page <span className="font-bold text-white">{results.page}</span> of{' '}
+                          <span className="font-bold text-white">{results.total_pages}</span>
+                          {' '}({results.found} total results)
+                        </div>
+
+                        {/* Pagination Buttons */}
+                        <div className="flex items-center gap-2">
+                          {/* First Page */}
+                          <button
+                            onClick={() => handlePageChange(1)}
+                            disabled={results.page === 1}
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm font-medium text-white hover:bg-slate-700 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                          >
+                            First
+                          </button>
+
+                          {/* Previous Page */}
+                          <button
+                            onClick={() => handlePageChange(results.page - 1)}
+                            disabled={results.page === 1}
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm font-medium text-white hover:bg-slate-700 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                          >
+                            Previous
+                          </button>
+
+                          {/* Page Numbers */}
+                          <div className="flex gap-1">
+                            {Array.from({ length: Math.min(5, results.total_pages) }, (_, i) => {
+                              // Show pages around current page
+                              let pageNum: number
+                              if (results.total_pages <= 5) {
+                                pageNum = i + 1
+                              } else if (results.page <= 3) {
+                                pageNum = i + 1
+                              } else if (results.page >= results.total_pages - 2) {
+                                pageNum = results.total_pages - 4 + i
+                              } else {
+                                pageNum = results.page - 2 + i
+                              }
+
+                              return (
+                                <button
+                                  key={pageNum}
+                                  onClick={() => handlePageChange(pageNum)}
+                                  className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                                    results.page === pageNum
+                                      ? 'bg-blue-600 text-white border-2 border-blue-400'
+                                      : 'bg-slate-800 text-gray-300 border border-slate-700 hover:bg-slate-700 hover:border-blue-500'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              )
+                            })}
+                          </div>
+
+                          {/* Next Page */}
+                          <button
+                            onClick={() => handlePageChange(results.page + 1)}
+                            disabled={results.page === results.total_pages}
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm font-medium text-white hover:bg-slate-700 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                          >
+                            Next
+                          </button>
+
+                          {/* Last Page */}
+                          <button
+                            onClick={() => handlePageChange(results.total_pages)}
+                            disabled={results.page === results.total_pages}
+                            className="px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm font-medium text-white hover:bg-slate-700 hover:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                          >
+                            Last
+                          </button>
+                        </div>
+
+                        {/* Quick Jump */}
+                        {results.total_pages > 10 && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-gray-400">Jump to page:</span>
+                            <input
+                              type="number"
+                              min="1"
+                              max={results.total_pages}
+                              placeholder="Page"
+                              className="w-20 px-3 py-2 bg-slate-800 border border-slate-700 rounded-md text-sm text-white focus:border-blue-500 focus:outline-none"
+                              onKeyPress={(e) => {
+                                if (e.key === 'Enter') {
+                                  const page = parseInt((e.target as HTMLInputElement).value)
+                                  if (page >= 1 && page <= results.total_pages) {
+                                    handlePageChange(page)
+                                  }
+                                }
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="text-center py-20 bg-slate-800 rounded-lg border border-slate-700">
                     <Search className="w-12 h-12 mx-auto text-gray-500 mb-4" />
@@ -240,24 +398,35 @@ export default function Home() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-4xl mx-auto mb-12">
                   {[
-                    'Butter chicken without onions and tomatoes',
-                    'Quick pasta under 20 minutes',
-                    'Jain recipes (no onion no garlic)',
-                    'Spicy curry with garlic and ginger',
-                    'Chocolate dessert without eggs',
-                    'कांदा नसलेली पनीर भाजी',
-                    'pyaz ke bina dal recipe',
-                    'bina tamatar ka chicken'
+                    { query: 'paneer without onion', tag: 'Dietary' },
+                    { query: 'chicken curry', tag: 'Popular' },
+                    { query: 'jain recipes', tag: 'Dietary' },
+                    { query: 'dal without garlic', tag: 'Dietary' },
+                    { query: 'pyaz ke bina sabzi', tag: 'Hindi 🇮🇳' },
+                    { query: 'vegan desserts', tag: 'Dietary' },
+                    { query: 'लसूण नाही भाजी', tag: 'Marathi 🇮🇳' },
+                    { query: 'vegetarian biryani', tag: 'Popular' },
+                    { query: 'paneer no cream', tag: 'Healthy' },
+                    { query: 'கேரட் ஹல்வா', tag: 'Tamil 🇮🇳' },
+                    { query: 'quick breakfast under 15 minutes', tag: 'Time' },
+                    { query: 'masala dosa', tag: 'South Indian' }
                   ].map((example, i) => (
                     <button
                       key={i}
                       onClick={() => {
-                        setQuery(example)
-                        handleSearch(example)
+                        setQuery(example.query)
+                        handleSearch(example.query)
                       }}
-                      className="p-4 bg-slate-800 rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-700 transition-all duration-200 text-left font-medium text-gray-300 hover:text-white"
+                      className="group relative p-4 bg-slate-800 rounded-lg border border-slate-700 hover:border-blue-500 hover:bg-slate-700 transition-all duration-200 text-left"
                     >
-                      {example}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-gray-300 group-hover:text-white">
+                          {example.query}
+                        </span>
+                        <span className="text-xs px-2 py-1 rounded-full bg-slate-700 text-gray-400 group-hover:bg-blue-600 group-hover:text-white transition-all">
+                          {example.tag}
+                        </span>
+                      </div>
                     </button>
                   ))}
                 </div>

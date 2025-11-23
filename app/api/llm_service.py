@@ -1,49 +1,76 @@
 """
-LLM-Powered Query Understanding Service
-Uses DeepSeek or other LLMs for intelligent recipe search
+Production-Grade LLM Service for Food Intelligence Platform
+Supports DeepSeek (primary), xAI Grok (validation), with intelligent fallback
+Optimized for recipe search, translation, and multilingual understanding
 """
 
 import json
 import os
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Tuple
 import httpx
-from datetime import datetime, timedelta
+import asyncio
+from datetime import datetime
 import hashlib
-from functools import lru_cache
 
 from .llm_config import LLMConfig, LLMProvider, SYSTEM_PROMPTS, EXAMPLE_QUERIES
 
 
 class LLMService:
     """
-    LLM Service for intelligent query understanding and translation
-    Supports multiple providers with automatic fallback
+    Enterprise-grade LLM Service with:
+    - Multi-provider support (DeepSeek, Grok, OpenAI)
+    - Intelligent fallback and error handling
+    - Response caching (1-hour TTL)
+    - Cross-validation mode (compare providers)
+    - Cost tracking and optimization
     """
     
     def __init__(self):
-        self.provider = LLMConfig.get_available_provider()
-        self.failed_providers = set()  # Track failed providers for session
+        self.primary_provider = LLMConfig.get_available_provider()
+        self.all_providers = LLMConfig.get_all_available_providers()
+        self.failed_providers = set()  # Track failed providers this session
         
-        if not self.provider:
-            print("⚠️  No LLM API key found. Using rule-based fallback.")
-            print("   Set DEEPSEEK_API_KEY, XAI_API_KEY, OPENAI_API_KEY, or GROQ_API_KEY for enhanced features.")
-        else:
-            config = LLMConfig.get_config(self.provider)
-            print(f"✅ LLM Service initialized with {self.provider.value} ({config['model']})")
-        
-        # Cache for translations and interpretations (1 hour TTL)
+        # Response cache (in-memory, 1 hour TTL)
         self._cache = {}
         self._cache_ttl = 3600  # 1 hour
+        
+        # Cost tracking
+        self.total_cost = 0.0
+        self.request_count = 0
+        
+        # Feature flags from environment
+        self.enable_comparison = os.getenv("ENABLE_LLM_COMPARISON", "false").lower() == "true"
+        
+        if not self.primary_provider:
+            print("⚠️  WARNING: No LLM API keys found!")
+            print("   Set DEEPSEEK_API_KEY or XAI_API_KEY in .env for enhanced features")
+            print("   System will fall back to rule-based parsing")
+        else:
+            provider_info = LLMConfig.get_provider_info(self.primary_provider)
+            print(f"✅ LLM Service initialized")
+            print(f"   Primary: {provider_info}")
+            
+            if len(self.all_providers) > 1:
+                print(f"   Available fallbacks: {[p.value for p in self.all_providers[1:]]}")
+                if self.enable_comparison:
+                    print(f"   🔬 Comparison mode ENABLED - will validate with {self.all_providers[1].value}")
     
-    def _get_cache_key(self, text: str, task: str) -> str:
-        """Generate cache key for text and task"""
-        return hashlib.md5(f"{task}:{text}".encode()).hexdigest()
+    # =========================================================================
+    # CACHE MANAGEMENT
+    # =========================================================================
+    
+    def _get_cache_key(self, text: str, task: str, provider: str = "") -> str:
+        """Generate cache key for text, task, and provider"""
+        key_str = f"{task}:{provider}:{text}"
+        return hashlib.md5(key_str.encode()).hexdigest()
     
     def _get_cached(self, cache_key: str) -> Optional[Any]:
         """Get cached result if not expired"""
         if cache_key in self._cache:
             result, timestamp = self._cache[cache_key]
-            if datetime.now().timestamp() - timestamp < self._cache_ttl:
+            age = datetime.now().timestamp() - timestamp
+            if age < self._cache_ttl:
+                print(f"   💾 Cache hit (age: {int(age)}s)")
                 return result
             else:
                 del self._cache[cache_key]
@@ -53,44 +80,69 @@ class LLMService:
         """Cache result with timestamp"""
         self._cache[cache_key] = (result, datetime.now().timestamp())
     
+    def clear_cache(self):
+        """Clear all cached responses"""
+        self._cache.clear()
+        print("🧹 Cache cleared")
+    
+    # =========================================================================
+    # CORE LLM API CALLS
+    # =========================================================================
+    
     async def _call_llm(
         self, 
         messages: List[Dict[str, str]], 
-        temperature: float = 0.3,
-        max_tokens: int = 2000,
+        temperature: float = 0.2,
+        max_tokens: int = 4000,
+        provider: Optional[LLMProvider] = None,
         retry_with_fallback: bool = True
     ) -> Optional[str]:
-        """Call LLM API with automatic fallback to alternative providers"""
-        if not self.provider:
+        """
+        Call LLM API with automatic fallback
+        
+        Args:
+            messages: Chat messages in OpenAI format
+            temperature: Sampling temperature (lower = more deterministic)
+            max_tokens: Maximum response tokens
+            provider: Specific provider to use (None = use primary)
+            retry_with_fallback: Try other providers if primary fails
+        
+        Returns:
+            LLM response text or None if all providers fail
+        """
+        if not provider:
+            provider = self.primary_provider
+        
+        if not provider:
             return None
         
-        # Try current provider first
-        result = await self._try_provider(self.provider, messages, temperature, max_tokens)
+        # Try primary/specified provider first
+        result = await self._try_provider(provider, messages, temperature, max_tokens)
         
-        # If failed and we should retry, try other providers
-        if result is None and retry_with_fallback:
-            print(f"🔄 Trying fallback providers...")
-            for provider in LLMConfig.PROVIDERS:
-                # Skip current provider and already failed providers
-                if provider == self.provider or provider in self.failed_providers:
+        if result is not None:
+            return result
+        
+        # Fallback to other providers if enabled
+        if retry_with_fallback:
+            print(f"   🔄 Trying fallback providers...")
+            for fallback_provider in self.all_providers:
+                # Skip already failed providers and current provider
+                if fallback_provider == provider or fallback_provider in self.failed_providers:
                     continue
                 
-                # Check if API key exists
-                if not LLMConfig.get_api_key(provider):
-                    continue
-                
-                print(f"   Attempting {provider.value}...")
-                result = await self._try_provider(provider, messages, temperature, max_tokens)
+                print(f"   → Attempting {fallback_provider.value}...")
+                result = await self._try_provider(fallback_provider, messages, temperature, max_tokens)
                 
                 if result is not None:
-                    # Success! Switch to this provider for future calls
-                    print(f"✅ Switched to {provider.value}")
-                    self.provider = provider
+                    print(f"   ✅ Fallback successful: {fallback_provider.value}")
+                    # Update primary provider for future requests
+                    self.primary_provider = fallback_provider
                     return result
                 else:
-                    self.failed_providers.add(provider)
+                    self.failed_providers.add(fallback_provider)
         
-        return result
+        print("   ❌ All LLM providers failed")
+        return None
     
     async def _try_provider(
         self,
@@ -99,7 +151,11 @@ class LLMService:
         temperature: float,
         max_tokens: int
     ) -> Optional[str]:
-        """Try a single provider"""
+        """
+        Try calling a specific LLM provider
+        
+        Returns response text or None on failure
+        """
         try:
             config = LLMConfig.get_config(provider)
             api_key = LLMConfig.get_api_key(provider)
@@ -119,7 +175,19 @@ class LLMService:
                 "max_tokens": max_tokens
             }
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            # Add response format if supported
+            if config.get("supports_json_mode"):
+                payload["response_format"] = {"type": "json_object"}
+                
+                # DeepSeek requires "json" in prompt when using json_object mode
+                if provider == LLMProvider.DEEPSEEK:
+                    # Add "Return JSON:" to the last user message if not already present
+                    if messages and "json" not in messages[-1]["content"].lower():
+                        messages[-1]["content"] += "\n\nReturn valid JSON only."
+            
+            timeout = config.get("timeout", 60)
+            
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(
                     f"{config['api_base']}/chat/completions",
                     headers=headers,
@@ -128,90 +196,176 @@ class LLMService:
                 
                 if response.status_code == 200:
                     result = response.json()
-                    return result["choices"][0]["message"]["content"]
-                else:
-                    error_text = response.text[:200]  # Truncate for cleaner logs
-                    print(f"❌ {provider.value} API error: {response.status_code} - {error_text}")
+                    content = result["choices"][0]["message"]["content"]
                     
-                    # Mark provider as failed if it's a balance/auth issue
-                    if response.status_code in [401, 402, 403]:
+                    # Track usage and cost
+                    usage = result.get("usage", {})
+                    input_tokens = usage.get("prompt_tokens", 0)
+                    output_tokens = usage.get("completion_tokens", 0)
+                    cost = LLMConfig.estimate_cost(provider, input_tokens, output_tokens)
+                    
+                    self.total_cost += cost
+                    self.request_count += 1
+                    
+                    print(f"   💰 Cost: ${cost:.6f} | Total: ${self.total_cost:.4f} ({self.request_count} requests)")
+                    
+                    return content
+                else:
+                    error_text = response.text[:200]
+                    print(f"   ❌ {provider.value} API error: {response.status_code}")
+                    print(f"      {error_text}")
+                    
+                    # Mark provider as failed for auth/balance issues
+                    if response.status_code in [401, 402, 403, 429]:
                         self.failed_providers.add(provider)
                     
                     return None
                     
+        except httpx.TimeoutException:
+            print(f"   ⏱️  {provider.value} timeout (>{timeout}s)")
+            return None
         except Exception as e:
-            print(f"❌ {provider.value} API call failed: {str(e)}")
+            print(f"   ❌ {provider.value} error: {str(e)[:100]}")
             return None
     
-    async def understand_query(self, query: str) -> Dict[str, Any]:
+    async def _call_with_comparison(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.2,
+        max_tokens: int = 4000
+    ) -> Tuple[Optional[str], Optional[Dict]]:
         """
-        Use LLM to understand user query intent and extract structured information
-        Falls back to rule-based parsing if LLM unavailable
+        Call multiple providers and compare results (for validation)
+        
+        Returns:
+            (primary_result, comparison_data)
         """
-        # Check cache first
-        cache_key = self._get_cache_key(query, "understand")
+        if len(self.all_providers) < 2 or not self.enable_comparison:
+            # No comparison possible or not enabled
+            result = await self._call_llm(messages, temperature, max_tokens)
+            return result, None
+        
+        # Call primary and secondary in parallel
+        primary = self.all_providers[0]
+        secondary = self.all_providers[1]
+        
+        print(f"   🔬 Comparison mode: {primary.value} vs {secondary.value}")
+        
+        tasks = [
+            self._try_provider(primary, messages, temperature, max_tokens),
+            self._try_provider(secondary, messages, temperature, max_tokens)
+        ]
+        
+        results = await asyncio.gather(*tasks)
+        primary_result, secondary_result = results
+        
+        # Build comparison data
+        comparison = {
+            "primary_provider": primary.value,
+            "secondary_provider": secondary.value,
+            "primary_response": primary_result,
+            "secondary_response": secondary_result,
+            "match": primary_result == secondary_result if (primary_result and secondary_result) else None
+        }
+        
+        if primary_result and secondary_result:
+            if primary_result == secondary_result:
+                print(f"   ✅ Responses match!")
+            else:
+                print(f"   ⚠️  Responses differ - using primary ({primary.value})")
+        
+        # Return primary result (or secondary if primary failed)
+        final_result = primary_result if primary_result else secondary_result
+        
+        return final_result, comparison
+    
+    # =========================================================================
+    # HIGH-LEVEL API METHODS
+    # =========================================================================
+    
+    async def understand_query(self, query: str, enable_comparison: bool = False) -> Dict[str, Any]:
+        """
+        Parse recipe query into structured data using LLM intelligence
+        
+        Args:
+            query: Natural language recipe query
+            enable_comparison: Compare results between providers
+        
+        Returns:
+            Structured query data with dish name, ingredients, dietary prefs, etc.
+        """
+        # Check cache
+        cache_key = self._get_cache_key(query, "understand", self.primary_provider.value if self.primary_provider else "")
         cached = self._get_cached(cache_key)
         if cached:
             return cached
         
-        if not self.provider:
-            # Fallback to rule-based parsing
-            return self._rule_based_understanding(query)
+        if not self.primary_provider:
+            # No LLM available - return basic structure
+            return self._fallback_understanding(query)
         
-        # Build prompt with few-shot examples
-        examples_text = "\n\n".join([
-            f"Example {i+1}:\nQuery: \"{ex['query']}\"\nResponse: {json.dumps(ex['response'], indent=2)}"
-            for i, ex in enumerate(EXAMPLE_QUERIES["query_understanding"])
-        ])
-        
-        user_prompt = f"""Analyze this recipe search query and return structured JSON:
+        # Build prompt
+        user_prompt = f"""Analyze this recipe search query:
 
 Query: "{query}"
 
-Examples for reference:
-{examples_text}
-
-Now analyze the given query and return JSON with the same structure."""
+Return structured JSON following the exact format specified in the system prompt.
+"""
         
         messages = [
             {"role": "system", "content": SYSTEM_PROMPTS["query_understanding"]},
             {"role": "user", "content": user_prompt}
         ]
         
-        response = await self._call_llm(messages, temperature=0.2)
+        # Call LLM (with or without comparison)
+        if enable_comparison and len(self.all_providers) >= 2:
+            response, comparison = await self._call_with_comparison(messages)
+        else:
+            response = await self._call_llm(messages)
+            comparison = None
         
-        if response:
-            try:
-                # Extract JSON from response (handle markdown code blocks)
-                response_clean = response.strip()
-                if response_clean.startswith("```json"):
-                    response_clean = response_clean[7:]
-                if response_clean.startswith("```"):
-                    response_clean = response_clean[3:]
-                if response_clean.endswith("```"):
-                    response_clean = response_clean[:-3]
-                
-                result = json.loads(response_clean.strip())
-                
-                # Cache successful result
-                self._set_cache(cache_key, result)
-                
-                return result
-            except json.JSONDecodeError as e:
-                print(f"⚠️  Failed to parse LLM response: {e}")
-                print(f"Response was: {response}")
-                return self._rule_based_understanding(query)
+        if not response:
+            return self._fallback_understanding(query)
         
-        return self._rule_based_understanding(query)
+        try:
+            # Parse JSON response
+            result = self._parse_json_response(response)
+            
+            # Validate required fields
+            required_fields = ["dish_name", "excluded_ingredients", "required_ingredients"]
+            if not all(field in result for field in required_fields):
+                print(f"   ⚠️  LLM response missing required fields")
+                return self._fallback_understanding(query)
+            
+            # Add metadata
+            result["_provider"] = self.primary_provider.value if self.primary_provider else "none"
+            result["_comparison"] = comparison
+            
+            # Cache successful result
+            self._set_cache(cache_key, result)
+            
+            return result
+            
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            print(f"   ⚠️  Failed to parse LLM response: {e}")
+            return self._fallback_understanding(query)
     
-    async def translate_query(self, query: str, target_language: str = "English", custom_prompt: str = None) -> str:
+    async def translate_query(
+        self, 
+        query: str, 
+        target_language: str = "English",
+        custom_prompt: Optional[str] = None
+    ) -> str:
         """
-        Translate query to target language with food context preservation
+        Translate recipe query to target language
         
         Args:
-            query: The query to translate
-            target_language: Target language for translation
-            custom_prompt: Optional custom prompt with better context
+            query: Query to translate
+            target_language: Target language (default: English)
+            custom_prompt: Custom prompt override
+        
+        Returns:
+            Translated query string
         """
         # Check cache
         cache_key = self._get_cache_key(f"{query}:{target_language}", "translate")
@@ -219,42 +373,53 @@ Now analyze the given query and return JSON with the same structure."""
         if cached:
             return cached
         
-        if not self.provider:
+        if not self.primary_provider:
             return query  # No translation without LLM
         
-        # Use custom prompt if provided, otherwise use default
+        # Build prompt
         if custom_prompt:
-            user_prompt = custom_prompt
-            messages = [
-                {"role": "user", "content": user_prompt}
-            ]
+            messages = [{"role": "user", "content": custom_prompt}]
         else:
-            user_prompt = f"""Translate this recipe query to {target_language}.
-Preserve ingredient names and provide alternatives in parentheses.
+            user_prompt = f"""Translate this recipe query to {target_language}:
 
 Query: "{query}"
 
-Target Language: {target_language}
-
-Return only the translated text, nothing else."""
-            
+Return ONLY the translated text (no explanations, no markdown).
+"""
             messages = [
                 {"role": "system", "content": SYSTEM_PROMPTS["translation"]},
                 {"role": "user", "content": user_prompt}
             ]
         
-        response = await self._call_llm(messages, temperature=0.2)
+        response = await self._call_llm(messages, temperature=0.2, max_tokens=500)
         
         if response:
-            translated = response.strip()
+            translated = response.strip().strip('"')
+            
+            # Handle JSON responses (some LLMs return {"translation": "text"})
+            if translated.startswith('{') and '"translation"' in translated:
+                try:
+                    parsed = json.loads(translated)
+                    translated = parsed.get('translation', translated)
+                except:
+                    pass  # If JSON parsing fails, use as-is
+            
             self._set_cache(cache_key, translated)
             return translated
         
         return query
     
-    async def extract_ingredients(self, query: str) -> Dict[str, List[str]]:
+    async def extract_ingredients(self, query: str) -> Dict[str, Any]:
         """
-        Extract ingredients from query using LLM understanding
+        Extract comprehensive ingredient information from query
+        
+        Returns:
+            {
+                "included": [...],
+                "excluded": [...],
+                "implied": [...],
+                "dietary_context": "..."
+            }
         """
         # Check cache
         cache_key = self._get_cache_key(query, "ingredients")
@@ -262,93 +427,91 @@ Return only the translated text, nothing else."""
         if cached:
             return cached
         
-        if not self.provider:
-            return {"included": [], "excluded": [], "implied": []}
+        if not self.primary_provider:
+            return {
+                "included": [],
+                "excluded": [],
+                "implied": [],
+                "dietary_context": "none"
+            }
         
-        user_prompt = f"""Extract all ingredients from this recipe query:
+        user_prompt = f"""Extract all ingredient information from this query:
 
 Query: "{query}"
 
-Consider:
-1. Explicit ingredients mentioned
-2. Ingredients implied by cooking methods or dish names
-3. Negative ingredients (without X, no Y)
-4. Dietary restrictions (jain = no onion/garlic, vegan = no dairy/eggs)
-
-Return JSON with "included", "excluded", "implied", and "dietary_context" lists."""
+Return JSON following the format specified in the system prompt.
+"""
         
         messages = [
             {"role": "system", "content": SYSTEM_PROMPTS["ingredient_extraction"]},
             {"role": "user", "content": user_prompt}
         ]
         
-        response = await self._call_llm(messages, temperature=0.2)
+        response = await self._call_llm(messages, temperature=0.2, max_tokens=1000)
         
         if response:
             try:
-                # Clean and parse response
-                response_clean = response.strip()
-                if response_clean.startswith("```json"):
-                    response_clean = response_clean[7:]
-                if response_clean.startswith("```"):
-                    response_clean = response_clean[3:]
-                if response_clean.endswith("```"):
-                    response_clean = response_clean[:-3]
-                
-                result = json.loads(response_clean.strip())
+                result = self._parse_json_response(response)
                 self._set_cache(cache_key, result)
                 return result
-            except json.JSONDecodeError:
+            except:
                 pass
         
-        return {"included": [], "excluded": [], "implied": [], "dietary_context": ""}
+        return {
+            "included": [],
+            "excluded": [],
+            "implied": [],
+            "dietary_context": "none"
+        }
     
-    def _rule_based_understanding(self, query: str) -> Dict[str, Any]:
-        """
-        Fallback rule-based query understanding
-        Used when LLM is unavailable
-        """
-        query_lower = query.lower()
+    # =========================================================================
+    # UTILITY METHODS
+    # =========================================================================
+    
+    def _parse_json_response(self, response: str) -> Dict:
+        """Parse JSON from LLM response (handle markdown code blocks)"""
+        response_clean = response.strip()
         
-        # Basic pattern matching
-        excluded = []
-        required = []
+        # Remove markdown code blocks
+        if response_clean.startswith("```json"):
+            response_clean = response_clean[7:]
+        elif response_clean.startswith("```"):
+            response_clean = response_clean[3:]
         
-        # Check for exclusions
-        if "without" in query_lower or "no " in query_lower or "bina" in query_lower:
-            # Simple extraction (this is where LLM shines!)
-            if "onion" in query_lower or "pyaz" in query_lower:
-                excluded.append("onion")
-            if "garlic" in query_lower or "lahsun" in query_lower:
-                excluded.append("garlic")
-            if "tomato" in query_lower or "tamatar" in query_lower:
-                excluded.append("tomato")
+        if response_clean.endswith("```"):
+            response_clean = response_clean[:-3]
         
-        # Detect Jain restrictions
-        if "jain" in query_lower:
-            excluded.extend(["onion", "garlic", "potato", "root vegetables"])
-        
+        return json.loads(response_clean.strip())
+    
+    def _fallback_understanding(self, query: str) -> Dict[str, Any]:
+        """Fallback structure when LLM is unavailable"""
         return {
             "intent": "search",
             "dish_name": query,
-            "excluded_ingredients": excluded,
-            "required_ingredients": required,
+            "excluded_ingredients": [],
+            "required_ingredients": [],
             "dietary_preferences": [],
             "cooking_time": None,
             "cuisine_type": None,
             "spice_level": None,
-            "translated_query": query,
-            "language_detected": "Unknown"
+            "course": None,
+            "language_detected": "Unknown",
+            "_provider": "fallback"
         }
     
     def get_stats(self) -> Dict[str, Any]:
         """Get service statistics"""
         return {
-            "provider": self.provider.value if self.provider else "None",
+            "primary_provider": self.primary_provider.value if self.primary_provider else "none",
+            "available_providers": [p.value for p in self.all_providers],
+            "failed_providers": [p.value for p in self.failed_providers],
+            "total_cost_usd": round(self.total_cost, 4),
+            "request_count": self.request_count,
+            "avg_cost_per_request": round(self.total_cost / self.request_count, 6) if self.request_count > 0 else 0,
             "cache_size": len(self._cache),
-            "model": LLMConfig.get_config(self.provider)["model"] if self.provider else "N/A"
+            "comparison_enabled": self.enable_comparison
         }
 
 
-# Global instance
+# Global singleton instance
 llm_service = LLMService()

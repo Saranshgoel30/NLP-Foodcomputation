@@ -10,6 +10,8 @@ from typing import List, Optional, Dict, Any
 import sys
 import os
 import time
+import hashlib
+import json
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -19,13 +21,8 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from app.api.search_client import SearchClient
-from app.api.query_parser import QueryParser
 from app.api.enhanced_query_parser import enhanced_parser
-from app.api.smart_recipe_filter import smart_filter
-from app.api.query_expansion import query_expander
-
-# Initialize both parsers - enhanced uses LLM, original is fallback
-query_parser = QueryParser()  # Keep for backward compatibility
+from app.api.llm_service import llm_service
 
 app = FastAPI(
     title="Food Intelligence API",
@@ -62,12 +59,57 @@ async def get_search_client():
     
     return client
 
+# Search results cache (in-memory, with TTL)
+# Structure: {cache_key: {"results": [...], "timestamp": float, "total": int}}
+search_cache = {}
+CACHE_TTL = 300  # 5 minutes
+
+def get_cache_key(query: str, filters: Dict, excluded: list) -> str:
+    """Generate cache key from search parameters"""
+    cache_data = {
+        "query": query,
+        "filters": filters,
+        "excluded": sorted(excluded) if excluded else []
+    }
+    return hashlib.md5(json.dumps(cache_data, sort_keys=True).encode()).hexdigest()
+
+def get_cached_results(cache_key: str) -> Optional[Dict]:
+    """Get cached results if valid"""
+    if cache_key in search_cache:
+        cached = search_cache[cache_key]
+        age = time.time() - cached["timestamp"]
+        if age < CACHE_TTL:
+            print(f"✅ Cache HIT (age: {age:.1f}s)")
+            return cached
+        else:
+            print(f"⚠️  Cache EXPIRED (age: {age:.1f}s)")
+            del search_cache[cache_key]
+    return None
+
+def cache_results(cache_key: str, results: list, total: int):
+    """Cache search results"""
+    search_cache[cache_key] = {
+        "results": results,
+        "timestamp": time.time(),
+        "total": total
+    }
+    print(f"💾 Cached {total} results (key: {cache_key[:8]}...)")
+
 # Response Models
 class SearchResponse(BaseModel):
     hits: List[Dict[str, Any]]
     found: int
+    page: int
+    limit: int
+    total_pages: int
     query: str
     duration_ms: float
+    llm_enabled: bool
+    translated_query: Optional[str] = None
+    detected_language: Optional[str] = None
+    excluded_count: Optional[int] = None
+    fallback_message: Optional[str] = None
+    is_fallback: Optional[bool] = False
 
 class AutocompleteResponse(BaseModel):
     suggestions: List[str]
@@ -76,6 +118,7 @@ class HealthResponse(BaseModel):
     status: str
     version: str
     search_engine: str
+    llm_provider: str
 
 @app.get("/", response_model=HealthResponse)
 async def root():
@@ -83,13 +126,15 @@ async def root():
     return {
         "status": "healthy",
         "version": "1.0.0",
-        "search_engine": "Typesense"
+        "search_engine": "Typesense",
+        "llm_provider": llm_service.primary_provider
     }
 
 @app.get("/api/search", response_model=SearchResponse)
 async def search_recipes(
     q: str = Query(..., description="Natural language search query"),
-    limit: int = Query(50, ge=1, le=250, description="Number of results"),
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    page: int = Query(1, ge=1, description="Page number"),
     cuisine: Optional[str] = Query(None, description="Filter by cuisine"),
     diet: Optional[str] = Query(None, description="Filter by diet"),
     course: Optional[str] = Query(None, description="Filter by course")
@@ -106,7 +151,8 @@ async def search_recipes(
     - Multilingual queries in Hindi/Regional languages
     
     - **q**: Natural language search query (required)
-    - **limit**: Number of results to return (default: 50, max: 250)
+    - **limit**: Results per page (default: 20, max: 100)
+    - **page**: Page number (default: 1)
     - **cuisine**: Filter by cuisine type
     - **diet**: Filter by diet type
     - **course**: Filter by course type
@@ -114,199 +160,130 @@ async def search_recipes(
     try:
         start = time.time()
         
-        # Step 1: Translate to English if needed (ALWAYS translate non-English first)
+        # Step 1: Translate to English if needed
         translated_query = await enhanced_parser.translate_to_english(q)
         print(f"\n🌍 Translation Step:")
         print(f"  Original Query: {q}")
         print(f"  Translated to English: {translated_query}")
         
-        # Step 2: Use enhanced LLM-powered parser on translated query
+        # Step 2: Use LLM to extract dietary restrictions and exclusions
         parsed = await enhanced_parser.parse_query(translated_query)
         
         # Debug logging
-        print(f"\n🔍 LLM-Enhanced Query Analysis:")
+        print(f"\n🔍 Query Analysis:")
         print(f"  Original: {q}")
-        print(f"  English Translation: {translated_query}")
-        print(f"  Method: {parsed.get('parsing_method', 'Unknown')}")
-        print(f"  Language: {parsed.get('language_detected', 'Unknown')}")
+        print(f"  Translated: {translated_query}")
         print(f"  Dish: {parsed.get('dish_name', 'N/A')}")
         print(f"  Excluded: {parsed.get('excluded_ingredients', [])}")
-        print(f"  Required: {parsed.get('required_ingredients', [])}")
         print(f"  Dietary: {parsed.get('dietary_preferences', [])}")
-        print(f"  Time: {parsed.get('cooking_time', 'N/A')}")
-        print(f"  Cuisine: {parsed.get('cuisine_type', 'N/A')}\n")
         
-        # Build filters from UI selections and parsed data
+        # Build filters
         filters = {}
         if cuisine and cuisine != "All":
             filters['cuisine'] = cuisine
-        elif parsed.get('cuisine_type'):
-            # Use LLM-detected cuisine if not specified
-            filters['cuisine'] = parsed['cuisine_type']
-            
         if diet and diet != "All":
             filters['diet'] = diet
-        elif parsed.get('dietary_preferences'):
-            # Use LLM-detected dietary preferences
-            filters['diet'] = parsed['dietary_preferences'][0]
-            
         if course and course != "All":
             filters['course'] = course
         
-        # Use the English translated query for better search results
-        search_query = translated_query
-        
-        # Get search client (lazy loads on first use)
+        # Get search client
         search_client = await get_search_client()
         
-        # STAGE 0.5: REVOLUTIONARY Query Expansion (find MORE relevant results!)
-        print(f"\n🚀 Stage 0.5: Query Expansion")
-        expansion_result = await query_expander.expand_query(
-            search_query,
-            context={
-                "excluded_ingredients": parsed.get('excluded_ingredients', []),
-                "cuisine": parsed.get('cuisine_type'),
-                "dietary": parsed.get('dietary_preferences', [])
-            }
-        )
-        
-        expanded_queries = expansion_result.get('expanded_queries', [])
-        search_strategy = expansion_result.get('search_strategy', 'parallel')
-        
-        # Collect results from all expanded queries
-        all_results = {}  # Dict to deduplicate by recipe ID
-        
-        # STAGE 1: Exhaustive multi-query search (optimized for maximum recall)
-        print(f"\n🔍 Stage 1: Multi-query exhaustive search")
-        print(f"   Strategy: {search_strategy}")
-        print(f"   Queries: {len(expanded_queries)} variants")
-        
-        try:
-            # Execute all expanded queries
-            for i, exp_query in enumerate(expanded_queries[:5], 1):  # Limit to top 5 for performance
-                query_text = exp_query.get('query', '')
-                weight = exp_query.get('weight', 1.0)
-                
-                print(f"   Query {i}/{min(len(expanded_queries), 5)}: '{query_text}' (weight: {weight})")
-                
-                try:
-                    query_results = search_client.search(
-                        query_text,
-                        limit=250,  # Always fetch maximum for best coverage
-                        filters=filters,
-                        excluded_ingredients=[],  # Don't filter yet - let LLM do smart filtering
-                        required_ingredients=[],  # Don't filter yet - let LLM do smart filtering
-                        time_constraint=parsed.get('cooking_time')
-                    )
-                    
-                    # Deduplicate and weight results
-                    for hit in query_results.get('hits', []):
-                        recipe_id = hit.get('document', {}).get('id') or hit.get('document', {}).get('name', '')
-                        
-                        if recipe_id not in all_results:
-                            # First time seeing this recipe
-                            if 'document' not in hit:
-                                hit['document'] = {}
-                            hit['document']['_query_weight'] = weight
-                            hit['document']['_found_by'] = query_text
-                            all_results[recipe_id] = hit
-                        else:
-                            # Recipe seen before, boost weight if this query has higher weight
-                            existing_weight = all_results[recipe_id]['document'].get('_query_weight', 0)
-                            if weight > existing_weight:
-                                all_results[recipe_id]['document']['_query_weight'] = weight
-                                all_results[recipe_id]['document']['_found_by'] = query_text
-                    
-                    print(f"      → Found {len(query_results.get('hits', []))} recipes")
-                    
-                except Exception as e:
-                    print(f"      ❌ Query failed: {str(e)}")
-                    continue
-            
-            # Convert dict back to list and sort by combined score
-            results_list = list(all_results.values())
-            
-            # Sort by: query_weight * typesense_score
-            for hit in results_list:
-                typesense_score = hit.get('text_match', 0)
-                query_weight = hit.get('document', {}).get('_query_weight', 1.0)
-                hit['_combined_score'] = typesense_score * query_weight
-            
-            results_list.sort(key=lambda x: x.get('_combined_score', 0), reverse=True)
-            
-            results = {
-                'hits': results_list,
-                'found': len(results_list)
-            }
-            
-            print(f"\n✅ Stage 1 complete: Found {len(results_list)} UNIQUE recipes across {min(len(expanded_queries), 5)} queries")
-            print(f"   Deduplication: {sum(len(all_results) for _ in expanded_queries[:5])} total → {len(results_list)} unique")
-                
-        except Exception as e:
-            print(f"❌ Search error: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            results = {'hits': [], 'found': 0}
-        
-        # STAGE 2: Light LLM-powered filtering (only for CRITICAL constraints)
+        # Extract constraints
         excluded_ingredients = parsed.get('excluded_ingredients', [])
-        required_ingredients = parsed.get('required_ingredients', [])
-        dietary_preferences = parsed.get('dietary_preferences', [])
         
-        # Only apply LLM filtering if there are CRITICAL exclusions (allergies, dietary restrictions)
-        has_critical_constraints = bool(excluded_ingredients)
+        # CRITICAL FIX: If user is searching "X without Y", search for X, then filter Y
+        # Don't search for "X without Y" literally!
+        dish_name = parsed.get('dish_name', '')
+        if dish_name and excluded_ingredients:
+            # User wants a specific dish without certain ingredients
+            # Search for the dish, then apply exclusions
+            search_query = dish_name
+            print(f"  🎯 Optimized: Searching '{dish_name}' then filtering out {excluded_ingredients}")
+        else:
+            # Use translated query as-is
+            search_query = translated_query
         
-        if has_critical_constraints and results.get('hits') and len(results.get('hits', [])) > 10:
-            print(f"🤖 Stage 2: Light LLM filtering (critical constraints only)")
-            print(f"   Excluded: {excluded_ingredients}")
-            print(f"   Note: Required ingredients and dietary preferences used for ranking, not filtering")
+        # Generate cache key
+        cache_key = get_cache_key(search_query, filters, excluded_ingredients)
+        
+        # Try cache first
+        cached = get_cached_results(cache_key)
+        
+        if cached:
+            # Serve from cache (instant!)
+            all_hits = cached["results"]
+            total_found = cached["total"]
+            excluded_count = 0  # Already filtered
+        else:
+            # FETCH ALL RESULTS by iterating through Typesense pages
+            print(f"\n🔍 Semantic Search (fetching ALL results): '{search_query}'")
             
-            try:
-                # ONLY filter for excluded ingredients - be lenient with everything else
-                filtered_results = await smart_filter.filter_recipes_smart(
-                    results['hits'],
-                    original_query=q,
+            all_hits = []
+            typesense_page = 1
+            per_page = 250  # Typesense max
+            max_pages = 40  # Safety: max 10,000 results (40 * 250)
+            
+            while typesense_page <= max_pages:
+                # Modify search_client to accept page parameter
+                results = search_client.search(
+                    search_query,
+                    limit=per_page,
+                    filters=filters,
                     excluded_ingredients=excluded_ingredients,
-                    required_ingredients=[],  # Don't filter by required - use for ranking only
-                    dietary_preferences=[]  # Don't filter by dietary - use for ranking only
+                    required_ingredients=[],
+                    time_constraint=parsed.get('cooking_time'),
+                    page=typesense_page  # Pass page to search_client
                 )
                 
-                # Combine results: perfect first, then good, then possible
-                # Be MORE inclusive - accept good and possible matches
-                final_hits = (
-                    filtered_results['perfect_matches'] +
-                    filtered_results['good_matches'] +
-                    filtered_results['possible_matches']  # Include possible matches too!
-                )[:limit]
+                hits = results.get('hits', [])
+                if not hits:
+                    break  # No more results
                 
-                final_found = len(final_hits)
-                excluded_count = len(filtered_results.get('excluded', []))
-                print(f"✅ Stage 2 complete: {final_found} matches (excluded {excluded_count} recipes with allergens)")
-            except Exception as e:
-                print(f"❌ Smart filtering error: {str(e)}")
-                import traceback
-                traceback.print_exc()
-                final_hits = results.get('hits', [])[:limit]
-                final_found = len(final_hits)
-                excluded_count = 0
-        else:
-            # No critical filtering needed - return all results!
-            print(f"✅ No critical constraints - returning all {len(results.get('hits', []))} results")
-            final_hits = results.get('hits', [])[:limit]
-            final_found = len(final_hits)
-            excluded_count = 0
+                all_hits.extend(hits)
+                
+                print(f"   📄 Fetched Typesense page {typesense_page}: {len(hits)} recipes (total: {len(all_hits)})")
+                
+                # If we got less than per_page, we've reached the end
+                if len(hits) < per_page:
+                    break
+                
+                typesense_page += 1
+            
+            total_found = len(all_hits)
+            excluded_count = results.get('excluded_count', 0) if excluded_ingredients else 0
+            
+            print(f"✅ Found: {total_found} total recipes across {typesense_page} Typesense pages")
+            if excluded_count > 0:
+                print(f"   Excluded: {excluded_count} recipes")
+            
+            # Cache the results
+            cache_results(cache_key, all_hits, total_found)
         
-        duration = (time.time() - start) * 1000  # Convert to ms
+        # Apply pagination to cached/fetched results
+        start_idx = (page - 1) * limit
+        end_idx = start_idx + limit
+        final_hits = all_hits[start_idx:end_idx]
         
-        # Return with translation info for UI display
+        print(f"📄 API Page {page}: Showing {len(final_hits)} recipes ({start_idx+1}-{min(end_idx, total_found)} of {total_found})")
+        
+        duration = (time.time() - start) * 1000
+        total_pages = (total_found + limit - 1) // limit  # Ceiling division
+        
+        # Return results with pagination info
         return {
             "hits": final_hits,
-            "found": final_found,
+            "found": total_found,  # Total results across all pages
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
             "query": q,
             "translated_query": translated_query if translated_query != q else None,
             "detected_language": parsed.get('language_detected'),
             "llm_enabled": enhanced_parser.use_llm,
             "excluded_count": excluded_count if excluded_count > 0 else None,
+            "fallback_message": None,
+            "is_fallback": False,
             "duration_ms": round(duration, 2)
         }
     except Exception as e:
@@ -395,30 +372,128 @@ async def analyze_query(
         parsed = await enhanced_parser.parse_query(q)
         ingredients = await enhanced_parser.extract_smart_ingredients(q)
         
+        # Translate if needed
+        translated_query = await enhanced_parser.translate_to_english(q)
+        
         return {
-            "query": q,
-            "analysis": parsed,
+            "original_query": q,
+            "translated_query": translated_query if translated_query != q else None,
+            "parsed": parsed,
             "ingredients": ingredients,
             "parser_stats": enhanced_parser.get_stats()
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
+@app.get("/api/compare")
+async def compare_llm_providers(
+    q: str = Query(..., description="Query to compare across providers")
+):
+    """
+    Compare LLM providers (DeepSeek vs Grok) on same query
+    
+    Only works if multiple providers are configured.
+    Returns comparison data showing how each LLM interpreted the query.
+    """
+    try:
+        if len(llm_service.all_providers) < 2:
+            raise HTTPException(
+                status_code=400, 
+                detail="Need at least 2 LLM providers for comparison. Configure DEEPSEEK_API_KEY and XAI_API_KEY in .env"
+            )
+        
+        # Parse with comparison enabled
+        result = await llm_service.understand_query(q, enable_comparison=True)
+        
+        return {
+            "query": q,
+            "result": result,
+            "comparison": result.get("_comparison"),
+            "providers": [p.value for p in llm_service.all_providers]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Comparison failed: {str(e)}")
+
+@app.get("/api/cache/clear")
+async def clear_search_cache():
+    """Clear the search results cache"""
+    global search_cache
+    cache_size = len(search_cache)
+    search_cache.clear()
+    return {
+        "status": "success",
+        "message": f"Cleared {cache_size} cached search results",
+        "cache_size": 0
+    }
+
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """Get search cache statistics"""
+    return {
+        "cache_size": len(search_cache),
+        "cache_ttl_seconds": CACHE_TTL,
+        "cached_queries": [
+            {
+                "key": key[:8] + "...",
+                "results_count": entry["total"],
+                "age_seconds": round(time.time() - entry["timestamp"], 1)
+            }
+            for key, entry in search_cache.items()
+        ]
+    }
+
 @app.get("/api/stats")
 async def get_stats():
-    """Get platform statistics including LLM status"""
+    """Get platform statistics including LLM performance"""
     parser_stats = enhanced_parser.get_stats()
+    llm_stats = llm_service.get_stats()
     
     return {
-        "total_recipes": "9600+",
-        "cuisines": "15+",
-        "diet_types": "7+",
-        "search_type": "LLM-Enhanced Semantic Search",
-        "llm_enabled": parser_stats["llm_enabled"],
-        "llm_provider": parser_stats["llm_stats"]["provider"] if parser_stats["llm_enabled"] else "None",
-        "llm_model": parser_stats["llm_stats"]["model"] if parser_stats["llm_enabled"] else "N/A"
+        "platform": {
+            "total_recipes": "9600+",
+            "cuisines": "15+",
+            "diet_types": "7+",
+            "search_type": "LLM-Enhanced Semantic Search",
+        },
+        "search_cache": {
+            "cached_queries": len(search_cache),
+            "ttl_seconds": CACHE_TTL
+        },
+        "llm": {
+            "enabled": llm_stats["primary_provider"] != "none",
+            "primary_provider": llm_stats["primary_provider"],
+            "available_providers": llm_stats["available_providers"],
+            "total_requests": llm_stats["request_count"],
+            "total_cost_usd": llm_stats["total_cost_usd"],
+            "avg_cost_per_request": llm_stats["avg_cost_per_request"],
+            "cache_size": llm_stats["cache_size"],
+            "comparison_enabled": llm_stats["comparison_enabled"]
+        },
+        "parser": parser_stats
     }
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """Clear LLM response cache (for testing/debugging)"""
+    try:
+        llm_service.clear_cache()
+        return {"status": "success", "message": "Cache cleared", "timestamp": time.time()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cache clear failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    
+    print("\n" + "="*80)
+    print("🚀 FOOD INTELLIGENCE PLATFORM v3.0.0")
+    print("="*80)
+    print("\n📡 Starting API Server...")
+    print("   Docs: http://localhost:8000/docs")
+    print("   Health: http://localhost:8000/")
+    print("   Stats: http://localhost:8000/api/stats")
+    print("\n⏳ Loading services...\n")
+    
+    uvicorn.run(app, host="0.0.0.0", port=8000, reload=True)

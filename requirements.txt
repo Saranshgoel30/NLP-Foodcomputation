@@ -1,6 +1,34 @@
-typesense
-sentence-transformers
-torch
-requests
+# ============================================================================
+# FOOD INTELLIGENCE PLATFORM - PRODUCTION DEPENDENCIES
+# ============================================================================
 
-streamlit
+# Core API Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+pydantic==2.5.0
+
+# HTTP Client for LLM APIs
+httpx==0.25.1
+
+# Search Engine
+typesense==0.18.0
+
+# Semantic Search & Embeddings
+sentence-transformers==2.2.2
+torch==2.1.0
+transformers==4.35.0
+
+# Data Processing
+numpy==1.24.3
+pandas==2.1.3
+
+# CORS & Security
+python-multipart==0.0.6
+
+# Optional: Frontend Testing (if using Streamlit)
+# streamlit==1.28.0
+
+# Development Tools (optional)
+# pytest==7.4.3
+# pytest-asyncio==0.21.1

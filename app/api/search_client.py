@@ -110,30 +110,24 @@ class SearchClient:
 
     def search(self, query: str, limit: int = 10, filters: Dict[str, str] = None, 
                excluded_ingredients: list = None, required_ingredients: list = None,
-               time_constraint: dict = None):
-        # Typesense has a max of 250 results per page - always fetch max for comprehensive results
-        per_page = 250
+               time_constraint: dict = None, page: int = 1):
+        # Typesense pagination
+        per_page = min(limit, 250)  # Typesense max is 250
         
         search_params = {
             'q': query,
             'query_by': 'name,description,ingredients',
             'per_page': per_page,
+            'page': page,
             'collection': COLLECTION_NAME,
             'facet_by': 'cuisine,diet,course',
-            # OPTIMIZATION: Exhaustive search for comprehensive results
-            'exhaustive_search': 'true',
-            # OPTIMIZATION: Consider 100 prefix/typo variations (default is only 4!)
-            'max_candidates': 100,
-            # OPTIMIZATION: Don't drop query words too early
-            'drop_tokens_threshold': 10,
-            # OPTIMIZATION: Be strict with typos initially (only after 100 results)
-            'typo_tokens_threshold': 100,
-            # OPTIMIZATION: Sum scores across fields for better ranking
-            'text_match_type': 'sum_score',
-            # OPTIMIZATION: Prioritize recipes matching more fields
-            'prioritize_num_matching_fields': 'true',
-            # OPTIMIZATION: Exact matches get highest priority
-            'prioritize_exact_match': 'true'
+            # Be lenient - allow partial matches (semantic search will rank them)
+            'drop_tokens_threshold': 5,  # Drop tokens if no results with all
+            'typo_tokens_threshold': 100,  # Allow typos liberally
+            'num_typos': 2,  # Allow 2 typos per word
+            # Let semantic search do the heavy lifting
+            'prioritize_exact_match': 'true',
+            'text_match_type': 'max_score'
         }
         
         if filters:
@@ -161,7 +155,8 @@ class SearchClient:
         
         if self.use_external_embeddings and query:
             vector = self.generate_embedding(query)
-            search_params['vector_query'] = f"embedding:([{','.join(map(str, vector))}], k:50)"
+            # Hybrid search: 50% text match, 50% semantic
+            search_params['vector_query'] = f"embedding:([{','.join(map(str, vector))}], k:100, alpha:0.5)"
 
         # Use multi_search to avoid URL length limits with vectors
         try:

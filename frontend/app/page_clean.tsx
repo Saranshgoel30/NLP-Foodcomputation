@@ -124,7 +124,7 @@ export default function Home() {
 
                 <div className="space-y-4">
                   {results.hits.map((hit, index) => (
-                    <RecipeCard key={index} recipe={hit.document} index={index + 1} />
+                    <RecipeCard key={index} recipe={hit.document} />
                   ))}
                 </div>
 
