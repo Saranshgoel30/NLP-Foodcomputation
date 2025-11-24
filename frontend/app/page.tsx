@@ -6,6 +6,7 @@ import { Search, Loader2, ChefHat, Clock, Utensils, Globe } from 'lucide-react'
 import SearchBar from '@/components/SearchBar'
 import RecipeCard from '@/components/RecipeCard'
 import FilterSidebar from '@/components/FilterSidebar'
+import VoiceInput from '@/components/VoiceInput'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 

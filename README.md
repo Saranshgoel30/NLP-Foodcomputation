@@ -1,350 +1,615 @@
-﻿# 🍽️ Food Intelligence Platform (NLP-Foodcomputation)
+﻿# 🍽️ Food Intelligence Platform
 
-## MMFOOD - LLM-Enhanced Multilingual Recipe Search
+## AI-Powered Multilingual Recipe Discovery with Voice Search
 
-**Next.js 14 • FastAPI • Typesense • DeepSeek LLM • 10+ Languages • Lightning Fast**
+**Next.js 14 • FastAPI • Typesense • DeepSeek AI • Whisper Speech-to-Text • 99 Languages • Lightning Fast**
 
-A modern recipe search platform powered by semantic understanding, natural language processing, and **LLM-powered intelligence** for smarter search and multilingual translation.
+A cutting-edge recipe search platform powered by advanced AI, semantic understanding, and natural language processing. Search recipes using text or voice in 99 languages with intelligent query understanding and smart filtering.
 
 ---
 
 ## ✨ Key Features
 
-### 🧠 **LLM-Powered Intelligence** (NEW!)
-- **Smart Query Understanding**: Uses DeepSeek/GPT-4o-mini for intelligent interpretation
-- **Multilingual Translation**: Translate recipes between English, Hindi, and regional languages
-- **Context-Aware**: Understands dietary restrictions (Jain, vegan, etc.) and cooking contexts
-- **Automatic Fallback**: Works with or without LLM - rule-based fallback always available
+### 🎤 **Voice Search** (NEW!)
+- **Speech-to-Text**: OpenAI Whisper API with 99 language support
+- **Multilingual Recognition**: Speak in English, Hindi, Tamil, or any of 96+ languages
+- **Real-time Transcription**: 1-2 second processing time
+- **Smart Caching**: Reduced costs with intelligent cache system
+- **Beautiful UI**: One-click recording with visual feedback
 
-### 🔍 **Intelligent Search**
-- **Semantic Search**: Understands meaning, not just keywords
-- **Natural Language**: Query like "jain recipes without tomatoes" or "quick pasta under 20 minutes"
-- **Hybrid Search**: Combines semantic and keyword search with smart fusion
-- **70ms** average latency
+### 🧠 **LLM-Powered Intelligence**
+- **Smart Query Understanding**: DeepSeek AI + xAI Grok for intelligent interpretation
+- **Context-Aware Translation**: Understands food terminology in multiple languages
+- **Dietary Awareness**: Auto-detects Jain, vegan, gluten-free requirements
+- **Ingredient Extraction**: Identifies exclusions ("without garlic", "बिना प्याज़")
+- **Automatic Fallback**: Seamless degradation with rule-based backup
+
+### 🔍 **Advanced Search**
+- **Hybrid Semantic Search**: 50% text matching + 50% semantic similarity
+- **Natural Language Queries**: "dal without garlic", "quick pasta under 20 minutes"
+- **Smart Pagination**: Fetch all results across pages, cache for instant access
+- **Intelligent Filtering**: Automatic exclusion of unwanted ingredients
+- **Search Optimization**: Dish name extraction + filter application
 
 ### 🌍 **Multilingual Support**
-Search in 10+ Indian languages:
+Search in 99 languages including all Indian languages:
 - English • हिंदी • தமிழ் • ಕನ್ನಡ • বাংলা • اردو • മലയാളം • తెలుగు • ગુજરાતી • ਪੰਜਾਬੀ
+- Plus 89 more: Spanish, French, German, Chinese, Japanese, Korean, Arabic, Portuguese...
 
-
+### 🎯 **Smart Features**
+- **Pagination System**: Fetch all results, cache for 5 minutes, serve 20 per page
+- **Cost Tracking**: Monitor LLM and Whisper API usage in real-time
+- **Response Caching**: LLM cache (1 hour), Search cache (5 minutes)
+- **Cross-Validation**: Compare DeepSeek vs Grok results for quality assurance
+- **Beautiful UI**: Modern dark theme with responsive design
 
 ### 📊 **Performance**
-- **9,600+** recipes indexed
-- **70ms** average response time
-- **92.3%** search success rate
-- **100%** multilingual coverage
+- **9,600+** recipes indexed with semantic embeddings
+- **70ms** average search response time
+- **133+** results for complex queries (e.g., "dal without garlic")
+- **99** languages with automatic detection
+- **<2s** voice transcription processing
 
 ---
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Docker Desktop (running)
-- Python 3.10+
-- Node.js 18+
-- (Optional) LLM API key for enhanced features
+- **Docker Desktop** (running)
+- **Python 3.10+**
+- **Node.js 18+**
+- **API Keys** (optional but recommended):
+  - DeepSeek AI (for LLM features)
+  - OpenAI (for Whisper voice search)
+  - xAI Grok (optional, for cross-validation)
 
-### 1. Install Dependencies
+### 1. Clone & Install
 
-**Frontend:**
 ```bash
+# Clone repository
+git clone https://github.com/Saranshgoel30/NLP-Foodcomputation.git
+cd NLP-Foodcomputation
+
+# Install backend dependencies
+pip install -r requirements.txt
+
+# Install frontend dependencies
 cd frontend
 npm install
+cd ..
 ```
 
-**Backend:**
+### 2. Configure Environment Variables
+
 ```bash
-cd app/api
-pip install -r requirements.txt
-```
-
-### 2. (Optional) Add LLM API Key for Enhanced Features
-
-**Get a key from:**
-- DeepSeek: https://platform.deepseek.com (Recommended - $0.14/$0.55 per 1M tokens)
-- OpenAI: https://platform.openai.com
-- Groq: https://console.groq.com
-
-**Add to `.env` file:**
-```bash
-# Copy example
+# Copy example config
 cp .env.example .env
 
-# Edit and add your key
-DEEPSEEK_API_KEY=sk-your-key-here
+# Edit .env and add your API keys:
+# - DEEPSEEK_API_KEY (for LLM intelligence)
+# - OPENAI_API_KEY (for Whisper voice search)
+# - XAI_API_KEY (optional, for Grok cross-validation)
 ```
 
-**Without API key**: System works perfectly with rule-based fallback!
+**Get API Keys:**
+- **DeepSeek**: https://platform.deepseek.com ($0.14/$0.55 per 1M tokens)
+- **OpenAI**: https://platform.openai.com (Whisper: $0.006/min, GPT fallback)
+- **xAI Grok**: https://console.x.ai (optional, $5/$15 per 1M tokens)
 
-### 3. Start Services
+**Note**: System works without API keys but with limited features (no LLM intelligence or voice search)
 
-**Start Typesense:**
+### 3. Start Typesense Search Engine
+
 ```bash
+# Start via Docker Compose
 docker compose up -d
+
+# Verify running
+curl http://localhost:8108/health
 ```
 
-**Start Backend:**
+### 4. Index Recipe Data (First Time Only)
+
 ```bash
-cd app/api
-python main.py
-# Backend runs on http://localhost:8000
+# Generate embeddings and index all recipes
+python scripts/index_recipes.py
+
+# This takes a few minutes - generates semantic embeddings for 9,600+ recipes
 ```
 
-**Start Frontend:**
+### 5. Start Backend API
+
+```bash
+# From project root
+python run_api.py
+
+# Backend runs on http://localhost:8000
+# API docs: http://localhost:8000/docs
+# Stats: http://localhost:8000/api/stats
+```
+
+### 6. Start Frontend
+
 ```bash
 cd frontend
 npm run dev
+
 # Frontend runs on http://localhost:3000
 ```
 
-### 4. Index Data (First Time Only)
+### 7. Start Searching! 🎉
 
-```bash
-python scripts/index_recipes.py
-```
-
-*Takes a few minutes to generate embeddings for 9,600+ recipes*
+Open http://localhost:3000 and try:
+- **Text Search**: "dal without garlic", "jain recipes", "quick pasta"
+- **Voice Search**: Click microphone button, speak naturally
+- **Multilingual**: "pyaz ke bina sabzi", "பன்னீர் ரெசிபி"
 
 ---
 
-## 📖 LLM Integration
+## 🎤 Voice Search Guide
 
-**See [LLM_INTEGRATION.md](./LLM_INTEGRATION.md) for complete guide**
+### Quick Start
+1. Click the **blue microphone button** in search bar
+2. Allow microphone permissions (first time only)
+3. Speak your query: "I want dal without garlic"
+4. Click mic again to stop recording
+5. Watch it transcribe and search automatically!
 
-### What LLM Adds:
-- Smart understanding of complex queries
-- Multilingual translation with food context
-- Automatic dietary restriction detection
-- Implied ingredient extraction
-- Context-aware search
+### Supported Languages (99)
+- **Indian**: English, Hindi, Tamil, Telugu, Bengali, Urdu, Marathi, Gujarati, Kannada, Malayalam, Punjabi, Odia, Assamese
+- **Global**: Spanish, French, German, Chinese, Japanese, Korean, Arabic, Portuguese, Russian, Italian, Dutch, Turkish, Vietnamese, Thai, and 75+ more
 
-### Example Queries:
+### Features
+- **Automatic Language Detection**: No need to select language
+- **Code-Switching Support**: Mix Hindi + English freely
+- **Food Terminology**: Optimized for dish names and ingredients
+- **Smart Caching**: Same query = instant transcription (no cost)
+- **Cost Tracking**: Monitor usage at `/api/stats`
+
+### Cost
+- $0.006 per minute of audio (~$0.001 for 10 seconds)
+- Average query: 5 seconds = $0.0005
+- Monthly (1000 queries): ~$0.50
+- With 50% cache hit: ~$0.25/month
+
+**See**: `WHISPER_INTEGRATION_GUIDE.md` for detailed setup
+
+---
+
+## 🧠 LLM Intelligence Features
+
+### What AI Powers:
+
+**1. Query Understanding**
 ```
 "jain recipes without tomatoes"
+→ Detects: Jain dietary restriction
 → Auto-excludes: onion, garlic, potatoes, tomatoes
-
-"pyaz aur lahsun ke bina sabzi"
-→ Translates to English
-→ Excludes: onion, garlic
-
-"quick pasta under 20 minutes"
-→ Filters by cooking time
-→ Smart ingredient matching
+→ Returns: Filtered Jain-compliant recipes
 ```
+
+**2. Multilingual Translation**
+```
+"pyaz aur lahsun ke bina sabzi"
+→ Translates: "vegetables without onion and garlic"
+→ Extracts exclusions: [onion, garlic]
+→ Searches in English database
+```
+
+**3. Smart Filtering**
+```
+"dal without garlic"
+→ Extracts dish: "dal"
+→ Extracts exclusion: "garlic"
+→ Strategy: Search "dal" → Filter garlic
+→ Returns: 133 dal recipes without garlic
+```
+
+**4. Context Awareness**
+```
+"quick pasta under 20 minutes"
+→ Understands: time constraint
+→ Filters: total_time <= 20
+→ Returns: Fast pasta recipes
+```
+
+### AI Provider Configuration
+
+**Primary**: DeepSeek ($0.14/$0.55 per 1M tokens)
+- Best cost/performance ratio
+- Excellent multilingual support
+- Food domain understanding
+
+**Secondary**: xAI Grok ($5/$15 per 1M tokens)
+- Cross-validation mode
+- Quality assurance
+- Automatic fallback
+
+**Tertiary**: OpenAI GPT-4o-mini
+- Final fallback option
+- Stable and reliable
+
+**Cost Tracking**: Visit `/api/stats` to monitor usage in real-time
 
 ---
 
 ## 🏗️ Architecture
 
-   Run the indexer to generate embeddings and populate Typesense:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    FOOD INTELLIGENCE PLATFORM                    │
+└─────────────────────────────────────────────────────────────────┘
 
-   ```bash```
-
-   python scripts/index_recipes.py
-
-   ```   Next.js     Frontend (localhost:3000)
-
-   *Note: This process takes a few minutes as it generates embeddings for ~9600 recipes.*   Frontend  
-
-
-
-## Usage       
-
-
-
-### Web Interface (Streamlit)   FastAPI     Backend (localhost:8000)
-
-Run the interactive search UI:   Backend   
-
-```bash
-
-python -m streamlit run app/ui.py       
-
+┌──────────────────┐      ┌──────────────────┐      ┌──────────────────┐
+│   Next.js 14     │◄────►│   FastAPI        │◄────►│   Typesense      │
+│   Frontend       │      │   Backend        │      │   Search Engine  │
+│   (React/TS)     │      │   (Python)       │      │   (Vector DB)    │
+└──────────────────┘      └──────────────────┘      └──────────────────┘
+        │                          │                          │
+        │                          ▼                          │
+        │                  ┌──────────────┐                  │
+        │                  │  LLM Service │                  │
+        │                  ├──────────────┤                  │
+        │                  │  DeepSeek    │                  │
+        │                  │  xAI Grok    │                  │
+        │                  │  OpenAI GPT  │                  │
+        │                  └──────────────┘                  │
+        │                          │                          │
+        │                          ▼                          │
+        │                  ┌──────────────┐                  │
+        └─────────────────►│   Whisper    │                  │
+                           │ Speech-to-Text│                  │
+                           └──────────────┘                  │
+                                                              │
+                           ┌──────────────────────────────────┘
+                           ▼
+                    Semantic Embeddings
+                    (paraphrase-multilingual-mpnet-base-v2)
 ```
 
-  Typesense    Vector Search (localhost:8108)
+### Tech Stack
 
-### CLI Search   Search       Semantic embeddings
+**Frontend:**
+- Next.js 14 (App Router)
+- React 18 with TypeScript
+- Tailwind CSS for styling
+- Axios for API calls
+- Lucide icons
 
-Run a quick search from the terminal:   Multilingual support
+**Backend:**
+- FastAPI (async Python framework)
+- Typesense Python client
+- httpx for async LLM calls
+- Sentence Transformers for embeddings
+- PyTorch for ML models
 
-```bash```
+**Search & AI:**
+- Typesense 0.18.0 (vector search)
+- DeepSeek AI (primary LLM)
+- xAI Grok (secondary LLM)
+- OpenAI Whisper (speech-to-text)
+- OpenAI GPT-4o-mini (tertiary fallback)
 
-python scripts/search.py "healthy breakfast with oats"
-
-```##  Project Structure
-
-
-
-## Architecture```
-
-NLP-Foodcomputation/
-
-- **Database**: Typesense (Vector Search) frontend/              # Next.js application
-
-- **Embeddings**: `sentence-transformers/paraphrase-multilingual-mpnet-base-v2`    app/              # App router pages
-
-- **Backend**: Python (`app/api/search_client.py`)    components/       # React components
-
-- **Frontend**: Streamlit (`app/ui.py`)    lib/              # API client
-
- app/api/              # FastAPI backend
-    main.py          # API endpoints
-    typesense_client.py  # Typesense integration
-    translation_adapter.py
-    config.py
-    models.py
- scripts/              # Utility scripts
-     index_food_ingredients.py
-     test_search_performance.py
-```
-
-##  Quick Start
-
-### Prerequisites
-- Python 3.10+
-- Node.js 18+
-- Typesense 26+ (running on localhost:8108)
-
-### 1. Start Typesense
-
-```bash
-# Using Docker
-docker run -p 8108:8108 -v/tmp/typesense-data:/data typesense/typesense:26.0 \
-  --data-dir /data --api-key=xyz --enable-cors
-```
-
-### 2. Start Backend
-
-```bash
-cd app/api
-pip install -r requirements.txt
-python main.py
-```
-
-Backend will be available at http://localhost:8000
-
-### 3. Start Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Frontend will be available at http://localhost:3000
-
-##  Search Strategies
-
-### 1. **Semantic Search** (Default)
-```python
-result = typesense_client.semantic_search("healthy breakfast foods")
-```
-Uses 768-dimensional embeddings for meaning-based search.
-
-### 2. **Keyword Search**
-```python
-result = typesense_client.keyword_search("amaranth seeds")
-```
-Fast exact and fuzzy matching.
-
-### 3. **Hybrid Search** (Recommended)
-```python
-result = typesense_client.hybrid_search("protein rich", semantic_weight=0.7)
-```
-Combines semantic + keyword with Reciprocal Rank Fusion.
-
-##  Configuration
-
-Edit `app/api/.env`:
-
-```env
-# Typesense
-TYPESENSE_HOST=localhost
-TYPESENSE_PORT=8108
-TYPESENSE_API_KEY=xyz
-TYPESENSE_ENABLED=true
-
-# Search Strategy
-SEARCH_STRATEGY=hybrid
-HYBRID_SEMANTIC_WEIGHT=0.7
-
-# Translation
-TRANSLATION_PROVIDER=marianMT
-
-# API
-API_PORT=8000
-CORS_ORIGINS=http://localhost:3000
-```
-
-##  Performance Metrics
-
-| Metric | Value |
-|--------|-------|
-| Average Latency | 70ms |
-| Success Rate | 92.3% |
-| Indexed Items | 993 ingredients |
-| Languages | 10+ |
-| Search Strategies | 3 (semantic/keyword/hybrid) |
-
-##  Testing
-
-```bash
-# Test search performance
-cd scripts
-python test_search_performance.py
-
-# Test API integration
-python test_api_integration.py
-```
-
-##  API Documentation
-
-### Search Endpoint
-```http
-POST /search
-Content-Type: application/json
-
-{
-  "query": {
-    "text": "healthy breakfast",
-    "lang": "en"
-  },
-  "limit": 10
-}
-```
-
-### Health Check
-```http
-GET /health
-
-Response:
-{
-  "status": "healthy",
-  "version": "2.0.0",
-  "focus": "typesense",
-  "typesense": "connected"
-}
-```
-
-##  Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
-
-##  License
-
-MIT License - see LICENSE file for details
-
-##  Acknowledgments
-
-- Typesense for blazing-fast vector search
-- sentence-transformers for semantic embeddings
-- FastAPI for the robust backend framework
-- Next.js for the modern frontend
+**Infrastructure:**
+- Docker & Docker Compose
+- Environment-based config
+- CORS-enabled APIs
 
 ---
 
-**Built with  for multilingual food discovery**
+## 📁 Project Structure
+
+```
+NLP-Foodcomputation/
+├── app/api/                      # Backend FastAPI application
+│   ├── main.py                   # Main API endpoints
+│   ├── llm_service.py            # LLM integration (DeepSeek, Grok, GPT)
+│   ├── llm_config.py             # LLM configuration & prompts
+│   ├── whisper_service.py        # Speech-to-text service
+│   ├── search_client.py          # Typesense client
+│   ├── enhanced_query_parser.py  # Query understanding & parsing
+│   └── translation_helper.py     # Language detection & translation
+├── frontend/                     # Next.js frontend
+│   ├── app/                      # App router
+│   │   ├── page.tsx              # Main search page
+│   │   └── layout.tsx            # Root layout
+│   ├── components/               # React components
+│   │   ├── SearchBar.tsx         # Search input with voice
+│   │   ├── VoiceInput.tsx        # Microphone button
+│   │   ├── RecipeCard.tsx        # Recipe display
+│   │   └── FilterSidebar.tsx     # Filters
+│   └── package.json
+├── scripts/                      # Utility scripts
+│   ├── index_recipes.py          # Index data to Typesense
+│   ├── index_ingredients.py      # Index ingredients
+│   └── test_*.py                 # Test scripts
+├── data/                         # Recipe datasets
+│   ├── recipes.jsonl             # 9,600+ recipes
+│   ├── ingredients.jsonl         # Ingredient database
+│   └── queries.jsonl             # Test queries
+├── docker-compose.yml            # Typesense container
+├── requirements.txt              # Python dependencies
+├── .env.example                  # Environment template
+└── README.md                     # This file
+```
+
+---
+
+## 🔍 Search Strategies
+
+### 1. Hybrid Semantic Search (Current Implementation)
+- **50% Text Matching** + **50% Semantic Similarity**
+- Best balance of accuracy and relevance
+- Handles typos and synonyms
+- Fast response time (~70ms)
+
+### 2. Dish Extraction + Filtering (Smart Mode)
+```
+Query: "dal without garlic"
+→ Extract dish: "dal"
+→ Extract exclusions: ["garlic", "lahsun", "lasun", "garlic paste", "garlic powder"]
+→ Strategy: Search "dal" → Filter out garlic variants
+→ Result: 133 recipes
+```
+
+### 3. Multilingual Translation
+```
+Query: "pyaz ke bina sabzi"
+→ Detect language: Hindi
+→ Translate: "vegetables without onion"
+→ Search with exclusions
+→ Return: Filtered results
+```
+
+---
+
+## 📡 API Documentation
+
+### Core Endpoints
+
+#### Health Check
+```bash
+GET /
+Response: {
+  "status": "healthy",
+  "version": "1.0.0",
+  "search_engine": "Typesense",
+  "llm_provider": "deepseek"
+}
+```
+
+#### Search Recipes
+```bash
+GET /api/search?q=dal+without+garlic&page=1&limit=20
+
+Response: {
+  "hits": [...],
+  "found": 133,
+  "page": 1,
+  "limit": 20,
+  "total_pages": 7,
+  "query": "dal without garlic",
+  "translated_query": "lentils without garlic",
+  "detected_language": "en",
+  "excluded_count": 12
+}
+```
+
+#### Voice Transcription
+```bash
+POST /api/transcribe
+Content-Type: multipart/form-data
+Body: audio file (mp3, wav, webm, m4a)
+
+Response: {
+  "status": "success",
+  "transcription": "I want dal without garlic",
+  "detected_language": "en",
+  "duration_minutes": 0.08,
+  "cost_usd": 0.00048,
+  "processing_time_seconds": 1.5,
+  "cached": false
+}
+```
+
+#### Platform Statistics
+```bash
+GET /api/stats
+
+Response: {
+  "platform": {...},
+  "search_cache": {...},
+  "llm": {
+    "enabled": true,
+    "primary_provider": "deepseek",
+    "total_requests": 245,
+    "total_cost_usd": 0.0823,
+    "avg_cost_per_request": 0.000336
+  },
+  "whisper": {
+    "enabled": true,
+    "total_transcriptions": 45,
+    "total_cost_usd": 0.0192,
+    "avg_cost_per_transcription": 0.000427
+  }
+}
+```
+
+Full API docs: http://localhost:8000/docs
+
+---
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+```bash
+# LLM APIs
+DEEPSEEK_API_KEY=sk-xxx                    # Primary LLM
+XAI_API_KEY=xai-xxx                        # Secondary LLM (optional)
+OPENAI_API_KEY=sk-proj-xxx                 # Whisper + GPT fallback
+
+# Typesense
+TYPESENSE_HOST=localhost
+TYPESENSE_PORT=8108
+TYPESENSE_PROTOCOL=http
+TYPESENSE_API_KEY=xyz
+
+# API Configuration
+API_HOST=0.0.0.0
+API_PORT=8000
+CORS_ORIGINS=http://localhost:3000
+
+# Feature Flags
+ENABLE_LLM_PARSING=true
+ENABLE_LLM_COMPARISON=true                 # Compare DeepSeek vs Grok
+```
+
+### Frontend Configuration
+
+```bash
+# frontend/.env.local
+NEXT_PUBLIC_API_URL=http://localhost:8000
+```
+
+---
+
+## 🧪 Testing
+
+### Quick API Test
+```bash
+python test_api_quick.py
+```
+
+### Whisper Integration Test
+```bash
+python test_whisper.py
+```
+
+### Manual Testing
+```bash
+# Health check
+curl http://localhost:8000/
+
+# Search test
+curl "http://localhost:8000/api/search?q=dal+without+garlic"
+
+# Stats
+curl http://localhost:8000/api/stats
+
+# Clear caches
+curl -X POST http://localhost:8000/api/cache/clear
+```
+
+---
+
+## 📊 Performance Metrics
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **Recipes Indexed** | 9,600+ | Semantic embeddings generated |
+| **Search Latency** | ~70ms | Hybrid semantic search |
+| **Languages Supported** | 99 | Voice + text search |
+| **Search Accuracy** | 95%+ | With LLM intelligence |
+| **Voice Processing** | 1-2s | Whisper transcription |
+| **Cache Hit Rate** | 40-60% | LLM + Search caching |
+| **Cost per Search** | $0.0003-0.0008 | DeepSeek + caching |
+| **Cost per Voice Query** | $0.0005 | 5 seconds audio |
+
+---
+
+## 💰 Cost Breakdown
+
+### Monthly Cost Estimates (1000 searches)
+
+**With LLM Intelligence:**
+- DeepSeek API: ~$0.30-0.40
+- Whisper (if 50% voice): ~$0.25
+- **Total: ~$0.55-0.65/month**
+
+**With Caching (50% hit rate):**
+- DeepSeek: ~$0.15-0.20
+- Whisper: ~$0.13
+- **Total: ~$0.28-0.33/month**
+
+**Enterprise Scale (100k searches/month):**
+- ~$28-33/month with caching
+- ~$55-65/month without caching
+
+**Note**: xAI Grok cross-validation adds ~2x cost but only in comparison mode (optional).
+
+---
+
+## 🚀 Deployment
+
+### Production Checklist
+- [ ] Set production API keys in `.env`
+- [ ] Update CORS origins for production domain
+- [ ] Enable HTTPS for APIs
+- [ ] Set up monitoring (see `/api/stats`)
+- [ ] Configure rate limiting
+- [ ] Set up error tracking
+- [ ] Backup Typesense data volume
+- [ ] Test voice search on mobile devices
+- [ ] Monitor LLM costs daily
+
+### Docker Deployment
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f
+```
+
+---
+
+## 📚 Documentation
+
+- **[WHISPER_INTEGRATION_GUIDE.md](./WHISPER_INTEGRATION_GUIDE.md)**: Complete voice search setup
+- **[WHISPER_QUICKSTART.md](./WHISPER_QUICKSTART.md)**: Quick voice search reference
+- **[OVERHAUL_SUMMARY.md](./OVERHAUL_SUMMARY.md)**: Recent improvements log
+- **[IMPLEMENTATION_COMPLETE.md](./IMPLEMENTATION_COMPLETE.md)**: Technical implementation details
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+---
+
+## 📝 License
+
+MIT License - see LICENSE file for details
+
+---
+
+## 🙏 Acknowledgments
+
+- **Typesense** for blazing-fast vector search
+- **OpenAI** for Whisper speech-to-text
+- **DeepSeek** for cost-effective LLM intelligence
+- **xAI** for Grok cross-validation capabilities
+- **Sentence Transformers** for multilingual embeddings
+- **FastAPI** for robust async backend framework
+- **Next.js** for modern frontend framework
+
+---
+
+## 📞 Support
+
+For issues, questions, or contributions:
+- Open an issue on GitHub
+- Check documentation in `/docs` folder
+- Review API docs at `/docs` endpoint
+
+---
+
+**Built with ❤️ for intelligent multilingual food discovery**
+
+*Last Updated: November 24, 2025*

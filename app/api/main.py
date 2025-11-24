@@ -1,9 +1,9 @@
 """
 FastAPI Backend for Food Intelligence Platform
-Provides REST APIs for search, autocomplete, and suggestions
+Provides REST APIs for search, autocomplete, suggestions, and speech-to-text
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -23,6 +23,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 from app.api.search_client import SearchClient
 from app.api.enhanced_query_parser import enhanced_parser
 from app.api.llm_service import llm_service
+from app.api.whisper_service import whisper_service
 
 app = FastAPI(
     title="Food Intelligence API",
@@ -447,16 +448,17 @@ async def get_cache_stats():
 
 @app.get("/api/stats")
 async def get_stats():
-    """Get platform statistics including LLM performance"""
+    """Get platform statistics including LLM, Whisper, and search performance"""
     parser_stats = enhanced_parser.get_stats()
     llm_stats = llm_service.get_stats()
+    whisper_stats = whisper_service.get_stats()
     
     return {
         "platform": {
             "total_recipes": "9600+",
             "cuisines": "15+",
             "diet_types": "7+",
-            "search_type": "LLM-Enhanced Semantic Search",
+            "search_type": "LLM-Enhanced Semantic Search with Voice Support",
         },
         "search_cache": {
             "cached_queries": len(search_cache),
@@ -472,8 +474,79 @@ async def get_stats():
             "cache_size": llm_stats["cache_size"],
             "comparison_enabled": llm_stats["comparison_enabled"]
         },
+        "whisper": {
+            "enabled": True,
+            "model": "whisper-1",
+            "supported_languages": 99,
+            "total_transcriptions": whisper_stats["total_requests"],
+            "total_duration_minutes": whisper_stats["total_duration_minutes"],
+            "total_cost_usd": whisper_stats["total_cost_usd"],
+            "avg_cost_per_transcription": whisper_stats["average_cost_per_request"],
+            "cache_size": whisper_stats["cache_size"]
+        },
         "parser": parser_stats
     }
+
+@app.post("/api/transcribe")
+async def transcribe_audio(
+    audio: UploadFile = File(...),
+    language: Optional[str] = Query(None, description="ISO-639-1 language code (e.g., 'en', 'hi', 'ta')"),
+    prompt: Optional[str] = Query(None, description="Optional prompt to guide transcription")
+):
+    """
+    Transcribe audio to text using OpenAI Whisper API
+    
+    Supports 99 languages including:
+    - English (en)
+    - Hindi (hi)
+    - Tamil (ta)
+    - Bengali (bn)
+    - Urdu (ur)
+    - Telugu (te)
+    - Marathi (mr)
+    - Gujarati (gu)
+    - Kannada (kn)
+    - Malayalam (ml)
+    - Punjabi (pa)
+    - And 88 more...
+    
+    Supported audio formats: mp3, mp4, mpeg, mpga, m4a, wav, webm
+    Max file size: 25 MB
+    Cost: $0.006 per minute of audio
+    """
+    try:
+        # Validate file size (25 MB limit)
+        content = await audio.read()
+        file_size_mb = len(content) / (1024 * 1024)
+        
+        if file_size_mb > 25:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File too large: {file_size_mb:.1f} MB. Maximum size is 25 MB."
+            )
+        
+        # Transcribe audio
+        result = await whisper_service.transcribe(
+            audio_file=content,
+            filename=audio.filename or "audio.webm",
+            language=language,
+            prompt=prompt
+        )
+        
+        return {
+            "status": "success",
+            "transcription": result["text"],
+            "detected_language": result["language"],
+            "duration_minutes": result["duration_minutes"],
+            "cost_usd": result["cost_usd"],
+            "processing_time_seconds": result["processing_time_seconds"],
+            "cached": result["cached"],
+            "timestamp": time.time()
+        }
+        
+    except Exception as e:
+        print(f"❌ Transcription error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
 
 @app.post("/api/cache/clear")
 async def clear_cache():

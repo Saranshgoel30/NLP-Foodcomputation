@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Search, Loader2 } from 'lucide-react'
+import VoiceInput from './VoiceInput'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -108,6 +109,11 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
     }
   }
 
+  const handleVoiceTranscription = (text: string) => {
+    onChange(text)
+    onSearch(text)
+  }
+
   return (
     <div className="relative w-full max-w-5xl mx-auto">
       <div className="relative flex gap-3">
@@ -131,6 +137,12 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
             </div>
           )}
         </div>
+        
+        {/* Voice Input Button */}
+        <VoiceInput 
+          onTranscription={handleVoiceTranscription}
+          disabled={loading}
+        />
         
         {/* Search Button */}
         <button
