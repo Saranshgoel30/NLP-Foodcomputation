@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { RefreshCw, Edit3, Tag } from 'lucide-react'
+import { RefreshCw, Edit3, Tag, ChevronDown, ChevronUp, AlertCircle } from 'lucide-react'
 import ChipInput from './ChipInput'
 
 interface StructuredQuery {
@@ -26,6 +26,11 @@ export default function QueryEditor({
   loading = false
 }: QueryEditorProps) {
   const [isExpanded, setIsExpanded] = useState(true)
+  const [showAllExclusions, setShowAllExclusions] = useState(false)
+  const [showAllInclusions, setShowAllInclusions] = useState(false)
+  
+  // Limit for compact display
+  const COMPACT_LIMIT = 5
 
   const handleBaseQueryChange = (value: string) => {
     onUpdate({ ...structured, base_query: value })
@@ -119,68 +124,143 @@ export default function QueryEditor({
           </div>
 
           {/* Include Ingredients */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-300 mb-2">
-              Include Ingredients
-              <span className="ml-2 text-xs font-normal text-gray-500">
-                (Must have these - press Enter to add)
-              </span>
-            </label>
+          <div className="bg-slate-900 rounded-lg p-4 border border-green-600/30">
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-green-400">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                Must Include
+                {structured.include_ingredients.length > 0 && (
+                  <span className="px-2 py-0.5 bg-green-600 text-white text-xs font-bold rounded-full">
+                    {structured.include_ingredients.length}
+                  </span>
+                )}
+              </label>
+              {structured.include_ingredients.length > COMPACT_LIMIT && (
+                <button
+                  onClick={() => setShowAllInclusions(!showAllInclusions)}
+                  className="text-xs text-green-400 hover:text-green-300 flex items-center gap-1 transition-colors"
+                >
+                  {showAllInclusions ? (
+                    <>
+                      <ChevronUp className="w-3 h-3" />
+                      Show less
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3" />
+                      Show all ({structured.include_ingredients.length})
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
             <ChipInput
-              values={structured.include_ingredients}
+              values={showAllInclusions 
+                ? structured.include_ingredients 
+                : structured.include_ingredients.slice(0, COMPACT_LIMIT)
+              }
               onChange={handleIncludeIngredientsChange}
-              placeholder="Type ingredient and press Enter..."
+              placeholder="Add ingredients that must be present..."
               disabled={loading}
               variant="success"
+              maxChips={showAllInclusions ? undefined : COMPACT_LIMIT}
             />
+
             {structured.include_ingredients.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500 italic">
+                No required ingredients
+              </p>
+            )}
+            
+            {!showAllInclusions && structured.include_ingredients.length > COMPACT_LIMIT && (
               <p className="mt-2 text-xs text-gray-400">
-                No specific ingredients required
+                +{structured.include_ingredients.length - COMPACT_LIMIT} more variants...
               </p>
             )}
           </div>
 
           {/* Exclude Ingredients */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-300 mb-2">
-              Exclude Ingredients
-              <span className="ml-2 text-xs font-normal text-gray-500">
-                (Must NOT have these - {structured.exclude_ingredients.length} variants)
-              </span>
-            </label>
+          <div className="bg-slate-900 rounded-lg p-4 border border-red-600/30">
+            <div className="flex items-center justify-between mb-3">
+              <label className="flex items-center gap-2 text-sm font-semibold text-red-400">
+                <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+                Must Exclude
+                {structured.exclude_ingredients.length > 0 && (
+                  <span className="px-2 py-0.5 bg-red-600 text-white text-xs font-bold rounded-full">
+                    {structured.exclude_ingredients.length}
+                  </span>
+                )}
+              </label>
+              {structured.exclude_ingredients.length > COMPACT_LIMIT && (
+                <button
+                  onClick={() => setShowAllExclusions(!showAllExclusions)}
+                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition-colors"
+                >
+                  {showAllExclusions ? (
+                    <>
+                      <ChevronUp className="w-3 h-3" />
+                      Show less
+                    </>
+                  ) : (
+                    <>
+                      <ChevronDown className="w-3 h-3" />
+                      Show all ({structured.exclude_ingredients.length})
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
             <ChipInput
-              values={structured.exclude_ingredients}
+              values={showAllExclusions 
+                ? structured.exclude_ingredients 
+                : structured.exclude_ingredients.slice(0, COMPACT_LIMIT)
+              }
               onChange={handleExcludeIngredientsChange}
-              placeholder="Type ingredient to exclude and press Enter..."
+              placeholder="Add ingredients to avoid..."
               disabled={loading}
               variant="danger"
+              maxChips={showAllExclusions ? undefined : COMPACT_LIMIT}
             />
-            {structured.exclude_ingredients.length > 10 && (
-              <p className="mt-2 text-xs text-blue-400">
-                ℹ️ Showing {structured.exclude_ingredients.length} ingredient variants (including regional names)
+
+            {structured.exclude_ingredients.length === 0 && (
+              <p className="mt-2 text-xs text-gray-500 italic">
+                No excluded ingredients
               </p>
+            )}
+            
+            {!showAllExclusions && structured.exclude_ingredients.length > COMPACT_LIMIT && (
+              <div className="mt-2 flex items-start gap-2">
+                <AlertCircle className="w-3 h-3 text-blue-400 mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-blue-400">
+                  +{structured.exclude_ingredients.length - COMPACT_LIMIT} more variants (including regional names like pyaaz, lahsun, etc.)
+                </p>
+              </div>
             )}
           </div>
 
           {/* Tags */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-300 mb-2 flex items-center gap-2">
+          <div className="bg-slate-900 rounded-lg p-4 border border-blue-600/30">
+            <label className="flex items-center gap-2 text-sm font-semibold text-blue-400 mb-3">
               <Tag className="w-4 h-4" />
-              <span>Tags</span>
-              <span className="text-xs font-normal text-gray-500">
-                (Descriptive modifiers - editable)
-              </span>
+              Tags & Filters
+              {structured.tags.length > 0 && (
+                <span className="px-2 py-0.5 bg-blue-600 text-white text-xs font-bold rounded-full">
+                  {structured.tags.length}
+                </span>
+              )}
             </label>
             <ChipInput
               values={structured.tags}
               onChange={handleTagsChange}
-              placeholder="Type tag and press Enter..."
+              placeholder="Add cuisine, dietary, or course tags..."
               disabled={loading}
               variant="default"
             />
             {structured.tags.length === 0 && (
-              <p className="mt-2 text-xs text-gray-400">
-                No tags specified
+              <p className="mt-2 text-xs text-gray-500 italic">
+                No tags specified - will search all cuisines & diets
               </p>
             )}
           </div>
