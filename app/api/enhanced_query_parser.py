@@ -185,6 +185,9 @@ Return ONLY valid JSON."""
         Translate non-English query to English with semantic understanding
         Uses hybrid approach: rule-based translation + LLM refinement
         """
+        # Check if query contains non-ASCII characters (indicates non-English script)
+        has_non_ascii = any(ord(char) > 127 for char in query)
+        
         # Step 1: Use rule-based semantic translation
         semantic_result = translator.semantic_translation(query)
         
@@ -192,12 +195,13 @@ Return ONLY valid JSON."""
         print(f"  Language Detected: {semantic_result['detected_language']}")
         print(f"  Rule-based Translation: {semantic_result['translated_query']}")
         print(f"  Excluded Ingredients: {semantic_result['excluded_ingredients']}")
+        print(f"  Non-ASCII chars: {has_non_ascii}")
         
-        # If already English and no complex negations, return as-is
-        if semantic_result['detected_language'] == 'English' and not semantic_result['excluded_ingredients']:
+        # If already English (pure ASCII) and no complex negations, return as-is
+        if not has_non_ascii and semantic_result['detected_language'] == 'English' and not semantic_result['excluded_ingredients']:
             return query
         
-        # Step 2: Use LLM for refinement if available
+        # Step 2: Use LLM for refinement if available (always use for non-ASCII text)
         if self.use_llm:
             try:
                 # Generate context-aware prompt
@@ -210,9 +214,14 @@ Return ONLY valid JSON."""
                 
                 print(f"  LLM Refinement: {llm_translation}")
                 
-                # Use LLM result if it's significantly different and better
-                if llm_translation and llm_translation.lower() != query.lower():
-                    return llm_translation
+                # Use LLM result if available (especially for non-ASCII text)
+                if llm_translation:
+                    # For non-ASCII text, always trust LLM translation
+                    if has_non_ascii:
+                        return llm_translation
+                    # For ASCII text, only use if significantly different
+                    if llm_translation.lower() != query.lower():
+                        return llm_translation
             except Exception as e:
                 print(f"  ⚠️  LLM refinement failed: {e}")
         
@@ -300,6 +309,199 @@ Return ONLY valid JSON."""
                 merged[key] = default_value
         
         return merged
+    
+    async def parse_structured_query(self, query: str) -> Dict[str, Any]:
+        """
+        NEW: Extract structured components for optimal recipe search
+        
+        This is the new primary method for query parsing that provides:
+        - Clean base_query (no generic terms, modifiers)
+        - Explicit include/exclude ingredients
+        - Descriptive tags
+        
+        Args:
+            query: Natural language recipe query (in any language)
+        
+        Returns:
+            {
+                "base_query": "clean dish name",
+                "include_ingredients": ["tomato", "mushroom"],
+                "exclude_ingredients": ["onion", "garlic"],
+                "tags": ["south-indian", "vegan", "quick"],
+                "original_query": "original input"
+            }
+        """
+        try:
+            # Step 1: Translate to English if needed
+            if self._has_non_ascii(query):
+                translated_query = await self.translate_to_english(query)
+                print(f"   🌍 Translated: '{query}' → '{translated_query}'")
+            else:
+                translated_query = query
+            
+            # Step 2: Get structured extraction from LLM
+            structured = await self.llm_service.extract_structured_query(translated_query)
+            
+            # Step 3: Clean generic terms from base_query (defense in depth)
+            if structured["base_query"]:
+                cleaned_base = self._clean_generic_terms(structured["base_query"])
+                
+                if cleaned_base != structured["base_query"]:
+                    print(f"   🧹 Further cleaned base_query: '{structured['base_query']}' → '{cleaned_base}'")
+                    structured["base_query"] = cleaned_base
+            
+            # Step 4: Expand exclude_ingredients using ingredient_aliases
+            if structured["exclude_ingredients"]:
+                expanded = self._expand_ingredient_exclusions(structured["exclude_ingredients"])
+                if len(expanded) > len(structured["exclude_ingredients"]):
+                    print(f"   📦 Expanded exclusions: {len(structured['exclude_ingredients'])} → {len(expanded)} variants")
+                    structured["exclude_ingredients"] = expanded
+            
+            # Step 5: Expand include_ingredients using ingredient_aliases
+            if structured["include_ingredients"]:
+                expanded = self._expand_ingredient_aliases(structured["include_ingredients"])
+                if len(expanded) > len(structured["include_ingredients"]):
+                    print(f"   📦 Expanded inclusions: {len(structured['include_ingredients'])} → {len(expanded)} variants")
+                    structured["include_ingredients"] = expanded
+            
+            # Add metadata
+            structured["parsing_method"] = "Structured LLM" if self.use_llm else "Structured Fallback"
+            structured["translated"] = translated_query != query
+            
+            return structured
+            
+        except Exception as e:
+            print(f"⚠️  Structured parsing failed: {e}")
+            # Fallback: return basic structure
+            return {
+                "base_query": query,
+                "include_ingredients": [],
+                "exclude_ingredients": [],
+                "tags": [],
+                "original_query": query,
+                "parsing_method": "Fallback"
+            }
+    
+    def _has_non_ascii(self, text: str) -> bool:
+        """Check if text contains non-ASCII characters (non-English script)"""
+        return any(ord(char) > 127 for char in text)
+    
+    def _clean_generic_terms(self, query: str) -> str:
+        """
+        Remove generic food terms that confuse semantic search
+        
+        Terms like 'sabzi', 'curry', 'dish' are too broad and should be removed
+        """
+        GENERIC_FOOD_STOPWORDS = {
+            'sabzi', 'sabji', 'vegetable', 'vegetables', 'curry', 'dish', 'recipe', 'food',
+            'ki sabzi', 'ki sabji', 'ka sabzi', 'ka sabji', 'ke sabzi', 'ke sabji',
+            'wali sabzi', 'wali sabji', 'ki', 'ka', 'ke', 'wali', 'wale',
+            'सब्जी', 'सब्ज़ी', 'की सब्जी', 'का सब्जी', 'के सब्जी', 'वाली सब्जी',
+        }
+        
+        original = query
+        query_lower = query.lower()
+        
+        # First, remove multi-word phrases (order matters!)
+        multi_word_phrases = [
+            'ki sabzi', 'ki sabji', 'ka sabzi', 'ka sabji', 'ke sabzi', 'ke sabji',
+            'wali sabzi', 'wali sabji', 'की सब्जी', 'का सब्जी', 'के सब्जी', 'वाली सब्जी'
+        ]
+        
+        for phrase in multi_word_phrases:
+            if phrase in query_lower:
+                # Remove the phrase (case-insensitive)
+                import re
+                query = re.sub(r'\b' + re.escape(phrase) + r'\b', '', query, flags=re.IGNORECASE)
+        
+        # Then remove single words
+        words = query.split()
+        filtered_words = [w for w in words if w.lower() not in GENERIC_FOOD_STOPWORDS]
+        query = ' '.join(filtered_words).strip()
+        
+        # If query becomes empty, return empty string (not original)
+        if not query:
+            return ""
+        
+        return query
+    
+    def _expand_ingredient_aliases(self, ingredients: List[str], return_family_keys: bool = False) -> List[str]:
+        """
+        Expand ingredients to include all variants from ingredient_aliases.json
+        
+        Example: "onion" → ["onion", "onions", "pyaz", "kanda", "onion paste", ...]
+        Works for both inclusions and exclusions
+        
+        Args:
+            ingredients: List of ingredient names to expand
+            return_family_keys: If True, returns family keys (e.g., "onions") instead of all aliases
+                               This is more efficient for search filtering
+        """
+        try:
+            import json
+            import os
+            
+            # Load ingredient_aliases.json
+            aliases_path = os.path.join(os.path.dirname(__file__), "nlp_data", "ingredient_aliases.json")
+            
+            if not os.path.exists(aliases_path):
+                return ingredients  # No expansion possible
+            
+            with open(aliases_path, 'r', encoding='utf-8') as f:
+                aliases_data = json.load(f)
+            
+            if return_family_keys:
+                # Return just the family keys for efficient lookup in search_client
+                family_keys = set()
+                for ingredient in ingredients:
+                    # Find matching ingredient family
+                    for ingredient_family, data in aliases_data.items():
+                        canonical = data.get("canonical", "")
+                        aliases = data.get("aliases", [])
+                        
+                        # Check if ingredient matches canonical or any alias
+                        if ingredient.lower() in [canonical.lower()] + [a.lower() for a in aliases]:
+                            family_keys.add(ingredient_family)
+                            break
+                    else:
+                        # If no match found, keep original
+                        family_keys.add(ingredient)
+                
+                return list(family_keys)
+            else:
+                # Return all aliases (for display/UI purposes)
+                expanded = set()
+                
+                for ingredient in ingredients:
+                    added = False
+                    
+                    # Find matching ingredient family
+                    for ingredient_family, data in aliases_data.items():
+                        canonical = data.get("canonical", "")
+                        aliases = data.get("aliases", [])
+                        
+                        # Check if ingredient matches canonical or any alias
+                        if ingredient.lower() in [canonical.lower()] + [a.lower() for a in aliases]:
+                            # Add all aliases from this family
+                            expanded.update(aliases)
+                            added = True
+                            break
+                    
+                    # If no match found, keep original
+                    if not added:
+                        expanded.add(ingredient)
+                
+                return list(expanded)
+            
+        except Exception as e:
+            print(f"   ⚠️  Ingredient expansion failed: {e}")
+            return ingredients
+    
+    def _expand_ingredient_exclusions(self, exclusions: List[str]) -> List[str]:
+        """
+        Backward compatibility wrapper - expands exclusions
+        """
+        return self._expand_ingredient_aliases(exclusions)
     
     def get_stats(self) -> Dict[str, Any]:
         """Get parser statistics"""

@@ -1,0 +1,70 @@
+{
+  "cuisine_tags": {
+    "indian": "Indian",
+    "north-indian": "North Indian Recipes",
+    "north indian": "North Indian Recipes",
+    "punjabi": "North Indian Recipes",
+    "south-indian": "South Indian Recipes",
+    "south indian": "South Indian Recipes",
+    "tamil": "Tamil Nadu",
+    "kerala": "Kerala Recipes",
+    "bengali": "Bengali Recipes",
+    "maharashtrian": "Maharashtrian Recipes",
+    "continental": "Continental",
+    "italian": "Italian Recipes",
+    "chinese": "Chinese",
+    "thai": "Thai",
+    "mexican": "Mexican"
+  },
+  "diet_tags": {
+    "vegetarian": "Vegetarian",
+    "veg": "Vegetarian",
+    "non-vegetarian": "Non Vegeterian",
+    "non-veg": "Non Vegeterian",
+    "nonveg": "Non Vegeterian",
+    "egg": "Eggetarian",
+    "eggetarian": "Eggetarian",
+    "vegan": "Vegan",
+    "gluten-free": "Gluten Free, Vegetarian",
+    "gluten free": "Gluten Free, Vegetarian",
+    "diabetic": "Diabetic Friendly",
+    "high-protein": "High Protein Vegetarian",
+    "high protein": "High Protein Vegetarian",
+    "jain": "Vegetarian",
+    "satvik": "Vegetarian"
+  },
+  "course_tags": {
+    "breakfast": "World Breakfast",
+    "south indian breakfast": "South Indian Breakfast",
+    "lunch": "Lunch",
+    "dinner": "Dinner",
+    "snack": "Snack",
+    "appetizer": "Appetizer",
+    "starter": "Appetizer",
+    "side": "Side Dish",
+    "side-dish": "Side Dish",
+    "main": "Main Course",
+    "main-course": "Main Course",
+    "dessert": "Dessert",
+    "sweet": "Dessert"
+  },
+  "tag_priority": [
+    "course",
+    "diet",
+    "cuisine"
+  ],
+  "special_dietary_exclusions": {
+    "jain": {
+      "exclude_ingredients": ["onion", "garlic", "potato", "root vegetables"],
+      "description": "Jain diet excludes root vegetables"
+    },
+    "vegan": {
+      "exclude_ingredients": ["milk", "butter", "ghee", "paneer", "cheese", "cream", "eggs", "honey"],
+      "description": "Vegan diet excludes all animal products"
+    },
+    "gluten-free": {
+      "exclude_ingredients": ["wheat", "atta", "maida", "bread", "pasta"],
+      "description": "Gluten-free excludes wheat products"
+    }
+  }
+}

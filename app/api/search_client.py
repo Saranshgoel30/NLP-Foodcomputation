@@ -229,19 +229,34 @@ class SearchClient:
         import json
         import os
         
+        # Debug: Log what we're filtering
+        print(f"\n  🔬 Filter Debug:")
+        print(f"     Input hits: {len(hits)}")
+        print(f"     Excluded: {excluded[:3]}..." if len(excluded) > 3 else f"     Excluded: {excluded}")
+        print(f"     Required: {required[:3]}..." if len(required) > 3 else f"     Required: {required}")
+        
         # Load ingredient patterns for comprehensive matching
         nlp_data_dir = os.path.join(os.path.dirname(__file__), 'nlp_data')
         ingredient_patterns = {}
+        ingredient_lookup = {}  # Map any alias -> family key for fast lookup
         
         try:
             with open(os.path.join(nlp_data_dir, 'ingredient_aliases.json'), 'r', encoding='utf-8') as f:
                 ingredient_data = json.load(f)
                 # Build pattern map for each canonical ingredient
-                for canonical, data in ingredient_data.items():
-                    ingredient_patterns[canonical] = {
+                for family_key, data in ingredient_data.items():
+                    ingredient_patterns[family_key] = {
                         'aliases': [alias.lower() for alias in data.get('aliases', [])],
                         'patterns': data.get('exclusion_patterns', [])
                     }
+                    # Build reverse lookup: any alias -> family key
+                    for alias in data.get('aliases', []):
+                        ingredient_lookup[alias.lower()] = family_key
+                    # Also map canonical and family key
+                    canonical = data.get('canonical', '').lower()
+                    if canonical:
+                        ingredient_lookup[canonical] = family_key
+                    ingredient_lookup[family_key.lower()] = family_key
         except Exception as e:
             print(f"Warning: Could not load ingredient patterns: {e}")
         
@@ -261,10 +276,13 @@ class SearchClient:
             
             # Check exclusions with comprehensive matching
             has_excluded = False
-            for excluded_canonical in excluded:
-                # Get all patterns for this ingredient
-                patterns_data = ingredient_patterns.get(excluded_canonical, {})
-                aliases = patterns_data.get('aliases', [excluded_canonical])
+            for excluded_ingredient in excluded:
+                # Look up the family key for this ingredient
+                family_key = ingredient_lookup.get(excluded_ingredient.lower(), excluded_ingredient)
+                
+                # Get all patterns for this ingredient family
+                patterns_data = ingredient_patterns.get(family_key, {})
+                aliases = patterns_data.get('aliases', [excluded_ingredient.lower()])
                 regex_patterns = patterns_data.get('patterns', [])
                 
                 # Method 1: Check title for obvious exclusions
@@ -318,10 +336,13 @@ class SearchClient:
             
             # Check requirements with comprehensive matching (title + ingredients + description)
             has_all_required = True
-            for required_canonical in required:
-                # Get all patterns for this ingredient
-                patterns_data = ingredient_patterns.get(required_canonical, {})
-                aliases = patterns_data.get('aliases', [required_canonical])
+            for required_ingredient in required:
+                # Look up the family key for this ingredient
+                family_key = ingredient_lookup.get(required_ingredient.lower(), required_ingredient)
+                
+                # Get all patterns for this ingredient family
+                patterns_data = ingredient_patterns.get(family_key, {})
+                aliases = patterns_data.get('aliases', [required_ingredient.lower()])
                 
                 # Check in multiple places: title first, then ingredients, then description
                 found = False

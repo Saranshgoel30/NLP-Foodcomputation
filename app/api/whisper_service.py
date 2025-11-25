@@ -132,19 +132,23 @@ class WhisperService:
             }
             
             # Add optional parameters
-            if language:
-                data["language"] = language
-                print(f"   Language hint: {language}")
+            # Default to English if not specified (more accurate for Indian accents)
+            if language is None:
+                language = "en"  # Force English by default
+            
+            data["language"] = language
+            print(f"   Language hint: {language}")
             
             # Food-specific prompt to improve accuracy
             if prompt is None:
                 prompt = (
-                    "This is a food recipe search query. "
-                    "It may contain dish names, ingredients, or cooking terms in multiple languages."
+                    "This is a food recipe search query in English. "
+                    "It may contain dish names like dal, paneer, biryani, pasta. "
+                    "Common words: without, garlic, onion, quick, spicy, healthy."
                 )
             data["prompt"] = prompt
             
-            # Make API request
+            # Make API request with better error handling
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(
                     self.api_url,
@@ -191,11 +195,31 @@ class WhisperService:
             
             return result_data
             
+        except httpx.ConnectError as e:
+            print(f"   ❌ Network connection failed: {str(e)}")
+            error_msg = (
+                "Cannot connect to OpenAI API. Possible causes:\n"
+                "1. No internet connection\n"
+                "2. Firewall/Proxy blocking api.openai.com\n"
+                "3. DNS resolution issues\n"
+                "4. VPN interference\n\n"
+                "Try: Check your internet connection and firewall settings"
+            )
+            raise Exception(error_msg)
         except httpx.TimeoutException:
             print("   ❌ Whisper API timeout")
-            raise Exception("Whisper API timeout - audio file may be too large")
+            raise Exception("Whisper API timeout - audio file may be too large or slow connection")
+        except httpx.HTTPStatusError as e:
+            print(f"   ❌ HTTP error: {e.response.status_code}")
+            raise Exception(f"Whisper API error: {e.response.status_code} - {e.response.text}")
         except Exception as e:
             print(f"   ❌ Whisper error: {str(e)}")
+            # Provide more helpful error message for common issues
+            if "getaddrinfo failed" in str(e) or "11001" in str(e):
+                raise Exception(
+                    "DNS resolution failed for api.openai.com. "
+                    "Check your internet connection, DNS settings, or try using a different network."
+                )
             raise
     
     def _get_mime_type(self, filename: str) -> str:

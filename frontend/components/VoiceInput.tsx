@@ -79,7 +79,8 @@ export default function VoiceInput({ onTranscription, disabled = false }: VoiceI
       
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       
-      const response = await fetch(`${API_URL}/api/transcribe`, {
+      // Force English language for better accuracy with Indian accents
+      const response = await fetch(`${API_URL}/api/transcribe?language=en`, {
         method: 'POST',
         body: formData,
       })

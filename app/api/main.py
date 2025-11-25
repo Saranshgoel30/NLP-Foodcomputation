@@ -40,6 +40,128 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Generic food terms that should be removed from search queries (too broad)
+GENERIC_FOOD_STOPWORDS = {
+    # Generic terms in English
+    'sabzi', 'sabji', 'vegetable', 'vegetables', 'curry', 'dish', 'recipe', 'food',
+    'ki sabzi', 'ki sabji', 'ka sabzi', 'ka sabji', 'ke sabzi', 'ke sabji',
+    'wali sabzi', 'wali sabji',
+    # Hindi variations
+    'सब्जी', 'सब्ज़ी', 'की सब्जी', 'का सब्जी', 'के सब्जी', 'वाली सब्जी',
+    # Other languages
+    'கறி', 'కూర', 'ಕಾರಿ', 'കറി',  # Tamil, Telugu, Kannada, Malayalam for curry
+}
+
+def clean_generic_terms(query: str) -> str:
+    """
+    Remove overly generic food terms from search query to improve semantic search
+    Examples:
+    - "aloo ki sabzi" → "aloo" (potato, specific)
+    - "paneer sabzi" → "paneer" (paneer, specific)
+    - "vegetable curry" → "" (too generic, will search all)
+    """
+    if not query:
+        return query
+    
+    # Lowercase for comparison
+    query_lower = query.lower().strip()
+    
+    # Check if entire query is just a generic term
+    if query_lower in GENERIC_FOOD_STOPWORDS:
+        return ""  # Empty query = search all
+    
+    # Remove generic terms but keep specific ingredients
+    words = query.split()
+    filtered_words = []
+    
+    # Multi-word phrase removal (e.g., "ki sabzi")
+    i = 0
+    while i < len(words):
+        # Check 3-word phrases
+        if i + 2 < len(words):
+            three_word = f"{words[i]} {words[i+1]} {words[i+2]}".lower()
+            if three_word in GENERIC_FOOD_STOPWORDS:
+                i += 3
+                continue
+        
+        # Check 2-word phrases
+        if i + 1 < len(words):
+            two_word = f"{words[i]} {words[i+1]}".lower()
+            if two_word in GENERIC_FOOD_STOPWORDS:
+                i += 2
+                continue
+        
+        # Check single word
+        if words[i].lower() not in GENERIC_FOOD_STOPWORDS:
+            filtered_words.append(words[i])
+        
+        i += 1
+    
+    cleaned = ' '.join(filtered_words).strip()
+    
+    # If cleaning removed everything, return empty (will search all)
+    if not cleaned:
+        return ""
+    
+    return cleaned
+
+def map_tags_to_filters(tags: List[str]) -> Dict[str, str]:
+    """
+    Map user-friendly tags to Typesense filter values with context-aware logic
+    
+    Args:
+        tags: List of tag strings like ['jain', 'south-indian', 'breakfast']
+    
+    Returns:
+        Dict with keys: cuisine, diet, course (only populated fields)
+    """
+    if not tags:
+        return {}
+    
+    # Load tag mappings
+    try:
+        nlp_data_dir = os.path.join(os.path.dirname(__file__), 'nlp_data')
+        with open(os.path.join(nlp_data_dir, 'tag_mappings.json'), 'r', encoding='utf-8') as f:
+            mappings = json.load(f)
+    except Exception as e:
+        print(f"Warning: Could not load tag mappings: {e}")
+        return {}
+    
+    filters = {}
+    
+    # Normalize tags (lowercase, strip)
+    normalized_tags = [tag.lower().strip() for tag in tags]
+    
+    # CONTEXT-AWARE MAPPING: Check for cuisine + course combinations first
+    has_south_indian = any(tag in ['south-indian', 'south indian', 'tamil', 'kerala'] for tag in normalized_tags)
+    has_north_indian = any(tag in ['north-indian', 'north indian', 'punjabi'] for tag in normalized_tags)
+    has_breakfast = any(tag in ['breakfast'] for tag in normalized_tags)
+    
+    # Map tags to filters based on priority (course > diet > cuisine)
+    for tag in normalized_tags:
+        # Context-aware course mapping
+        if tag == 'breakfast' and 'course' not in filters:
+            if has_south_indian:
+                filters['course'] = 'South Indian Breakfast'
+            elif has_north_indian:
+                filters['course'] = 'North Indian Breakfast'  # May not exist, will fallback
+            else:
+                filters['course'] = 'World Breakfast'
+        
+        # Check other course mappings
+        elif tag in mappings.get('course_tags', {}) and 'course' not in filters:
+            filters['course'] = mappings['course_tags'][tag]
+        
+        # Check diet mappings
+        if tag in mappings.get('diet_tags', {}) and 'diet' not in filters:
+            filters['diet'] = mappings['diet_tags'][tag]
+        
+        # Check cuisine mappings
+        if tag in mappings.get('cuisine_tags', {}) and 'cuisine' not in filters:
+            filters['cuisine'] = mappings['cuisine_tags'][tag]
+    
+    return filters
+
 # Lazy initialization of search client (only when first search request arrives)
 # This allows LLM features to work immediately while search loads in background
 client = None
@@ -131,6 +253,52 @@ async def root():
         "llm_provider": llm_service.primary_provider
     }
 
+@app.post("/api/parse-query")
+async def parse_query(query: str = Query(..., description="Query to parse into structured components")):
+    """
+    NEW: Parse query into structured components for optimal recipe search
+    
+    Extracts:
+    - base_query: Clean dish name (no generic terms, modifiers)
+    - include_ingredients: Explicitly requested additions
+    - exclude_ingredients: Ingredients to avoid (with all variants)
+    - tags: Descriptive modifiers (cuisine, dietary, timing, style)
+    
+    This endpoint is called by the frontend to:
+    1. Initially parse user's query
+    2. Reset edited query back to original LLM understanding
+    
+    - **query**: Natural language recipe query (in any language)
+    
+    Returns structured JSON with all 4 components.
+    """
+    try:
+        start = time.time()
+        
+        print(f"\n🔍 Parsing query: '{query}'")
+        
+        # Use new structured extraction
+        structured = await enhanced_parser.parse_structured_query(query)
+        
+        duration = (time.time() - start) * 1000
+        
+        print(f"✅ Structured extraction complete:")
+        print(f"   base_query: '{structured['base_query']}'")
+        print(f"   include_ingredients: {structured['include_ingredients']}")
+        print(f"   exclude_ingredients ({len(structured['exclude_ingredients'])}): {structured['exclude_ingredients'][:5]}{'...' if len(structured['exclude_ingredients']) > 5 else ''}")
+        print(f"   tags: {structured['tags']}")
+        print(f"   duration: {duration:.2f}ms")
+        
+        return {
+            **structured,
+            "duration_ms": round(duration, 2),
+            "success": True
+        }
+        
+    except Exception as e:
+        print(f"❌ Parse query error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query parsing failed: {str(e)}")
+
 @app.get("/api/search", response_model=SearchResponse)
 async def search_recipes(
     q: str = Query(..., description="Natural language search query"),
@@ -138,7 +306,12 @@ async def search_recipes(
     page: int = Query(1, ge=1, description="Page number"),
     cuisine: Optional[str] = Query(None, description="Filter by cuisine"),
     diet: Optional[str] = Query(None, description="Filter by diet"),
-    course: Optional[str] = Query(None, description="Filter by course")
+    course: Optional[str] = Query(None, description="Filter by course"),
+    # Structured query parameters (optional - if provided, skips LLM parsing)
+    base_query: Optional[str] = Query(None, description="Dish/ingredient name (user-edited)"),
+    include_ingredients: Optional[str] = Query(None, description="Comma-separated ingredients that must be present"),
+    exclude_ingredients: Optional[str] = Query(None, description="Comma-separated ingredients to exclude"),
+    tags: Optional[str] = Query(None, description="Comma-separated tags (cuisine/dietary/course)")
 ):
     """
     Search for recipes using LLM-powered natural language understanding
@@ -157,28 +330,103 @@ async def search_recipes(
     - **cuisine**: Filter by cuisine type
     - **diet**: Filter by diet type
     - **course**: Filter by course type
+    - **base_query**: (Optional) User-edited dish name, skips LLM parsing
+    - **include_ingredients**: (Optional) Comma-separated required ingredients
+    - **exclude_ingredients**: (Optional) Comma-separated excluded ingredients
+    - **tags**: (Optional) Comma-separated tags for cuisine/diet/course
     """
     try:
         start = time.time()
         
-        # Step 1: Translate to English if needed
-        translated_query = await enhanced_parser.translate_to_english(q)
-        print(f"\n🌍 Translation Step:")
-        print(f"  Original Query: {q}")
-        print(f"  Translated to English: {translated_query}")
+        # Check if structured parameters are provided (user edited the query)
+        use_structured = base_query is not None
         
-        # Step 2: Use LLM to extract dietary restrictions and exclusions
-        parsed = await enhanced_parser.parse_query(translated_query)
+        if use_structured:
+            # User has edited the structured query - use as-is without LLM parsing
+            print(f"\n✏️  Using User-Edited Structured Query:")
+            print(f"  Base Query: {base_query or '(all recipes)'}")
+            print(f"  Include: {include_ingredients or 'none'}")
+            print(f"  Exclude: {exclude_ingredients or 'none'}")
+            print(f"  Tags: {tags or 'none'}")
+            
+            # Expand base_query with ingredient aliases for better matching
+            # E.g., "paneer" → "paneer OR panir OR cottage cheese"
+            if base_query and base_query.strip():
+                expanded_query_terms = []
+                # Split base_query into words
+                for word in base_query.split():
+                    # Try to find aliases for this word
+                    aliases = enhanced_parser._expand_ingredient_aliases([word])
+                    if len(aliases) > 1:
+                        # Found aliases - create OR query
+                        # Limit to top 5 most common aliases to avoid query bloat
+                        top_aliases = aliases[:5]
+                        expanded_query_terms.append(' '.join(top_aliases))
+                    else:
+                        # No aliases found - use original word
+                        expanded_query_terms.append(word)
+                
+                search_query = ' '.join(expanded_query_terms)
+                print(f"  🔍 Expanded Query: {search_query}")
+            else:
+                search_query = "*"
+            
+            translated_query = base_query or ""
+            
+            # Parse comma-separated ingredients
+            excluded_ingredients_list = [x.strip() for x in (exclude_ingredients or "").split(",") if x.strip()]
+            required_ingredients_list = [x.strip() for x in (include_ingredients or "").split(",") if x.strip()]
+            
+            # Parse tags to extract cuisine/diet/course
+            parsed_tags = [x.strip() for x in (tags or "").split(",") if x.strip()]
+            
+            # Map tags to filters (override URL parameters if provided)
+            # This is a simple implementation - you may want to enhance tag parsing
+            parsed = {
+                'dish_name': base_query or '',
+                'excluded_ingredients': excluded_ingredients_list,
+                'required_ingredients': required_ingredients_list,
+                'dietary_preferences': parsed_tags  # For logging
+            }
+            
+        else:
+            # Traditional flow: LLM parsing
+            # Step 1: Translate to English if needed
+            translated_query = await enhanced_parser.translate_to_english(q)
+            print(f"\n🌍 Translation Step:")
+            print(f"  Original Query: {q}")
+            print(f"  Translated to English: {translated_query}")
+            
+            # Step 2: Use LLM to extract dietary restrictions and exclusions
+            parsed = await enhanced_parser.parse_query(translated_query)
+            
+            # Debug logging
+            print(f"\n🔍 Query Analysis:")
+            print(f"  Original: {q}")
+            print(f"  Translated: {translated_query}")
+            print(f"  Dish: {parsed.get('dish_name', 'N/A')}")
+            print(f"  Excluded: {parsed.get('excluded_ingredients', [])}")
+            print(f"  Dietary: {parsed.get('dietary_preferences', [])}")
+            print(f"  Tags: {parsed.get('tags', [])}")
+            
+            # Extract constraints
+            excluded_ingredients_list = parsed.get('excluded_ingredients', [])
+            required_ingredients_list = parsed.get('required_ingredients', [])
+            parsed_tags = parsed.get('tags', [])
+            
+            # CRITICAL FIX: If user is searching "X without Y", search for X, then filter Y
+            # Don't search for "X without Y" literally!
+            dish_name = parsed.get('dish_name', '')
+            if dish_name and excluded_ingredients_list:
+                # User wants a specific dish without certain ingredients
+                # Search for the dish, then apply exclusions
+                search_query = dish_name
+                print(f"  🎯 Optimized: Searching '{dish_name}' then filtering out {excluded_ingredients_list}")
+            else:
+                # Use translated query as-is
+                search_query = translated_query
         
-        # Debug logging
-        print(f"\n🔍 Query Analysis:")
-        print(f"  Original: {q}")
-        print(f"  Translated: {translated_query}")
-        print(f"  Dish: {parsed.get('dish_name', 'N/A')}")
-        print(f"  Excluded: {parsed.get('excluded_ingredients', [])}")
-        print(f"  Dietary: {parsed.get('dietary_preferences', [])}")
-        
-        # Build filters
+        # Build filters (cuisine/diet/course)
         filters = {}
         if cuisine and cuisine != "All":
             filters['cuisine'] = cuisine
@@ -187,23 +435,51 @@ async def search_recipes(
         if course and course != "All":
             filters['course'] = course
         
+        # Map tags to filters (works for both structured and traditional flow)
+        tags_to_map = parsed_tags if parsed_tags else []
+        if tags_to_map:
+            tag_filters = map_tags_to_filters(tags_to_map)
+            # Only apply tag filters if URL filters aren't set
+            if not filters.get('cuisine') and tag_filters.get('cuisine'):
+                filters['cuisine'] = tag_filters['cuisine']
+            if not filters.get('diet') and tag_filters.get('diet'):
+                filters['diet'] = tag_filters['diet']
+            if not filters.get('course') and tag_filters.get('course'):
+                filters['course'] = tag_filters['course']
+            
+            if tag_filters:
+                print(f"  🏷️  Mapped tags {tags_to_map} to filters: {tag_filters}")
+        
         # Get search client
         search_client = await get_search_client()
         
-        # Extract constraints
-        excluded_ingredients = parsed.get('excluded_ingredients', [])
-        
-        # CRITICAL FIX: If user is searching "X without Y", search for X, then filter Y
-        # Don't search for "X without Y" literally!
-        dish_name = parsed.get('dish_name', '')
-        if dish_name and excluded_ingredients:
-            # User wants a specific dish without certain ingredients
-            # Search for the dish, then apply exclusions
-            search_query = dish_name
-            print(f"  🎯 Optimized: Searching '{dish_name}' then filtering out {excluded_ingredients}")
+        # Extract final ingredient lists
+        if use_structured:
+            # For structured mode, expand ingredients through the parser
+            print(f"  📦 Expanding ingredients for structured query...")
+            excluded_ingredients = enhanced_parser._expand_ingredient_aliases(excluded_ingredients_list) if excluded_ingredients_list else []
+            required_ingredients = enhanced_parser._expand_ingredient_aliases(required_ingredients_list) if required_ingredients_list else []
+            print(f"     Excluded: {len(excluded_ingredients_list)} → {len(excluded_ingredients)} variants")
+            print(f"     Required: {len(required_ingredients_list)} → {len(required_ingredients)} variants")
         else:
-            # Use translated query as-is
-            search_query = translated_query
+            # For traditional mode, ingredients are already expanded by parse_query
+            excluded_ingredients = parsed.get('excluded_ingredients', [])
+            required_ingredients = parsed.get('required_ingredients', [])
+        
+        # CLEAN GENERIC TERMS: Remove "sabzi", "vegetable", "curry" etc.
+        # These are too broad and confuse semantic search
+        original_query = search_query
+        search_query = clean_generic_terms(search_query)
+        if search_query != original_query:
+            if search_query:
+                print(f"  🧹 Cleaned query: '{original_query}' → '{search_query}'")
+            else:
+                print(f"  🧹 Query too generic ('{original_query}'), will search with filters only")
+        
+        # If query is empty after cleaning but we have filters/exclusions, use '*' for all
+        if not search_query and (filters or excluded_ingredients):
+            search_query = "*"  # Typesense wildcard for all documents
+            print(f"  🔍 Using wildcard search with filters")
         
         # Generate cache key
         cache_key = get_cache_key(search_query, filters, excluded_ingredients)
@@ -232,8 +508,8 @@ async def search_recipes(
                     limit=per_page,
                     filters=filters,
                     excluded_ingredients=excluded_ingredients,
-                    required_ingredients=[],
-                    time_constraint=parsed.get('cooking_time'),
+                    required_ingredients=required_ingredients,
+                    time_constraint=parsed.get('cooking_time') if not use_structured else None,
                     page=typesense_page  # Pass page to search_client
                 )
                 

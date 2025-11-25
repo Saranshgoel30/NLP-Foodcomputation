@@ -7,8 +7,17 @@ import SearchBar from '@/components/SearchBar'
 import RecipeCard from '@/components/RecipeCard'
 import FilterSidebar from '@/components/FilterSidebar'
 import VoiceInput from '@/components/VoiceInput'
+import QueryEditor from '@/components/QueryEditor'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
+interface StructuredQuery {
+  base_query: string
+  include_ingredients: string[]
+  exclude_ingredients: string[]
+  tags: string[]
+  original_query: string
+}
 
 interface Recipe {
   document: {
@@ -54,37 +63,99 @@ export default function Home() {
     diet: '',
     course: ''
   })
+  const [structuredQuery, setStructuredQuery] = useState<StructuredQuery | null>(null)
+  const [parsingQuery, setParsingQuery] = useState(false)
 
   const handleSearch = useCallback(async (searchQuery: string, page: number = 1) => {
     if (!searchQuery.trim()) {
       setResults(null)
+      setStructuredQuery(null)
       return
     }
 
     setLoading(true)
+    setParsingQuery(true)
+    
+    try {
+      // Step 1: Parse the query into structured components
+      const parseResponse = await axios.post(`${API_URL}/api/parse-query?query=${encodeURIComponent(searchQuery)}`)
+      const parsed = parseResponse.data
+      
+      // Store structured query with original
+      const structured: StructuredQuery = {
+        base_query: parsed.base_query || '',
+        include_ingredients: parsed.include_ingredients || [],
+        exclude_ingredients: parsed.exclude_ingredients || [],
+        tags: parsed.tags || [],
+        original_query: searchQuery
+      }
+      setStructuredQuery(structured)
+      setParsingQuery(false)
+      
+      // Step 2: Search with structured parameters
+      await searchWithStructured(structured, page)
+      
+    } catch (error) {
+      console.error('Search failed:', error)
+      setParsingQuery(false)
+      setLoading(false)
+    }
+  }, [filters])
+  
+  const searchWithStructured = async (structured: StructuredQuery, page: number = 1) => {
+    setLoading(true)
     try {
       const params = new URLSearchParams({
-        q: searchQuery,
+        q: structured.original_query,
         limit: '20',
         page: page.toString(),
         ...(filters.cuisine && { cuisine: filters.cuisine }),
         ...(filters.diet && { diet: filters.diet }),
-        ...(filters.course && { course: filters.course })
+        ...(filters.course && { course: filters.course }),
+        // Add structured parameters
+        ...(structured.base_query && { base_query: structured.base_query }),
+        ...(structured.include_ingredients.length > 0 && { 
+          include_ingredients: structured.include_ingredients.join(',') 
+        }),
+        ...(structured.exclude_ingredients.length > 0 && { 
+          exclude_ingredients: structured.exclude_ingredients.join(',') 
+        }),
+        ...(structured.tags.length > 0 && { 
+          tags: structured.tags.join(',') 
+        })
       })
 
       const response = await axios.get(`${API_URL}/api/search?${params}`)
       setResults(response.data)
       setCurrentPage(page)
     } catch (error) {
-      console.error('Search failed:', error)
+      console.error('Search with structured params failed:', error)
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }
 
   const handlePageChange = (page: number) => {
-    handleSearch(query, page)
+    if (structuredQuery) {
+      searchWithStructured(structuredQuery, page)
+    } else {
+      handleSearch(query, page)
+    }
     window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  
+  const handleStructuredUpdate = async (updated: StructuredQuery) => {
+    // User edited the structured query - re-search with new parameters
+    setStructuredQuery(updated)
+    await searchWithStructured(updated, 1)
+  }
+  
+  const handleReset = async () => {
+    // Reset back to original query parsing
+    if (structuredQuery) {
+      setParsingQuery(true)
+      await handleSearch(structuredQuery.original_query, 1)
+    }
   }
 
   // Real-time filtering: re-search when filters change
@@ -133,6 +204,18 @@ export default function Home() {
                 onSearch={handleSearch}
               />
             </div>
+
+            {/* Query Editor - Shown after parsing */}
+            {structuredQuery && (
+              <div className="mb-8">
+                <QueryEditor
+                  structured={structuredQuery}
+                  onUpdate={handleStructuredUpdate}
+                  onReset={handleReset}
+                  loading={parsingQuery || loading}
+                />
+              </div>
+            )}
 
             {/* Loading State */}
             {loading && (

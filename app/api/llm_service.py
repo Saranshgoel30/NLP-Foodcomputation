@@ -409,6 +409,86 @@ Return ONLY the translated text (no explanations, no markdown).
         
         return query
     
+    async def extract_structured_query(self, query: str) -> Dict[str, Any]:
+        """
+        NEW: Extract structured components for optimal recipe search
+        
+        Extracts:
+        - base_query: Clean dish name (no generic terms, modifiers)
+        - include_ingredients: Explicitly requested additions
+        - exclude_ingredients: Ingredients to avoid (with canonical names)
+        - tags: Descriptive modifiers (cuisine, dietary, timing, style)
+        
+        Args:
+            query: Natural language recipe query
+        
+        Returns:
+            {
+                "base_query": "clean dish name",
+                "include_ingredients": ["tomato", "mushroom"],
+                "exclude_ingredients": ["onion", "garlic"],
+                "tags": ["south-indian", "vegan", "quick"],
+                "original_query": "original input"
+            }
+        """
+        # Check cache
+        cache_key = self._get_cache_key(query, "structured")
+        cached = self._get_cached(cache_key)
+        if cached:
+            return cached
+        
+        if not self.primary_provider:
+            # Fallback: return basic structure
+            return {
+                "base_query": query,
+                "include_ingredients": [],
+                "exclude_ingredients": [],
+                "tags": [],
+                "original_query": query
+            }
+        
+        user_prompt = f"""Extract structured components from this recipe query:
+
+Query: "{query}"
+
+Return ONLY valid JSON (no markdown, no explanations) following the exact format specified in the system prompt.
+"""
+        
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPTS["structured_extraction"]},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        response = await self._call_llm(messages, temperature=0.1, max_tokens=800)
+        
+        if response:
+            try:
+                result = self._parse_json_response(response)
+                
+                # Validate structure
+                required_fields = ["base_query", "include_ingredients", "exclude_ingredients", "tags"]
+                if all(field in result for field in required_fields):
+                    # Add original query
+                    result["original_query"] = query
+                    
+                    # Cache successful result
+                    self._set_cache(cache_key, result)
+                    
+                    return result
+                else:
+                    print(f"   ⚠️  Structured extraction missing required fields")
+            except Exception as e:
+                print(f"   ⚠️  Failed to parse structured extraction: {e}")
+        
+        # Fallback on error
+        return {
+            "base_query": query,
+            "include_ingredients": [],
+            "exclude_ingredients": [],
+            "tags": [],
+            "original_query": query
+        }
+    
     async def extract_ingredients(self, query: str) -> Dict[str, Any]:
         """
         Extract comprehensive ingredient information from query
