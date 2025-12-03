@@ -18,7 +18,22 @@ A cutting-edge recipe search platform powered by advanced AI, semantic understan
 | Backend API | http://43.205.136.103:8001 | 8001 |
 | API Documentation | http://43.205.136.103:8001/docs | 8001 |
 
-> **Note**: Voice search requires HTTPS or localhost due to browser security. For testing voice features locally, run on `localhost:3000`.
+### 🎤 Enabling Voice Search on Production
+
+Voice search requires HTTPS or localhost due to browser security policies. To enable voice search on the production HTTP site, follow these steps:
+
+#### For Google Chrome:
+1. Open Chrome and navigate to: `chrome://flags/#unsafely-treat-insecure-origin-as-secure`
+2. In the text box, add: `http://43.205.136.103:3001`
+3. Change the dropdown from "Disabled" to **"Enabled"**
+4. Click **"Relaunch"** to restart Chrome
+5. Voice search will now work on the production site!
+
+#### For Other Browsers:
+- **Firefox**: Go to `about:config`, search for `media.getusermedia.insecure.enabled` and set to `true`
+- **Edge**: Same as Chrome - use `edge://flags/#unsafely-treat-insecure-origin-as-secure`
+
+> **Note**: For local development, voice search works automatically on `localhost:3000`.
 
 ---
 
