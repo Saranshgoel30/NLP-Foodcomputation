@@ -696,58 +696,6 @@ docker-compose logs -f
 
 ---
 
-## 📚 Documentation
-
-- **[WHISPER_INTEGRATION_GUIDE.md](./WHISPER_INTEGRATION_GUIDE.md)**: Complete voice search setup
-- **[WHISPER_QUICKSTART.md](./WHISPER_QUICKSTART.md)**: Quick voice search reference
-- **[OVERHAUL_SUMMARY.md](./OVERHAUL_SUMMARY.md)**: Recent improvements log
-- **[IMPLEMENTATION_COMPLETE.md](./IMPLEMENTATION_COMPLETE.md)**: Technical implementation details
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-MIT License - see LICENSE file for details
-
----
-
-## 🙏 Acknowledgments
-
-- **Typesense** for blazing-fast vector search
-- **OpenAI** for Whisper speech-to-text
-- **DeepSeek** for cost-effective LLM intelligence
-- **xAI** for Grok cross-validation capabilities
-- **Sentence Transformers** for multilingual embeddings
-- **FastAPI** for robust async backend framework
-- **Next.js** for modern frontend framework
-
----
-
-## 📞 Support
-
-For issues, questions, or contributions:
-- Open an issue on GitHub
-- Check documentation in `/docs` folder
-- Review API docs at `/docs` endpoint
-
----
-
-**Built with ❤️ for intelligent multilingual food discovery**
-
-*Last Updated: December 4, 2025*
-
----
-
 ## 📊 Project Statistics
 
 | Metric | Value |
