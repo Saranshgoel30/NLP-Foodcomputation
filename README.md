@@ -764,6 +764,7 @@ For issues, questions, or contributions:
 ## 👥 Authors
 
 - **Saransh Goel** - Ashoka University Capstone Project
+- **Aarya Toshniwal** - Ashoka University Capstone Project
 
 ---
 
