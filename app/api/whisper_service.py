@@ -1,15 +1,16 @@
 """
-OpenAI Whisper Speech-to-Text Service
-Provides multilingual voice transcription for recipe search queries
-Supports 99 languages including Hindi, Tamil, Bengali, Urdu, etc.
+OpenAI Whisper Speech-to-Text Service 
+Optimized for Indian vernacular dishes, noisy environments, and multilingual queries
 """
 
 import os
 import time
 import hashlib
-from typing import Dict, Optional, Tuple
+import json
+from typing import Dict, Optional, Tuple, List
 import httpx
 from dotenv import load_dotenv
+from difflib import get_close_matches
 
 load_dotenv()
 
@@ -17,14 +18,98 @@ load_dotenv()
 class WhisperService:
     """
     Enterprise-grade Whisper API integration for speech-to-text
+    ENHANCED with Indian food vocabulary and fuzzy correction
     
     Features:
     - Multilingual transcription (99 languages)
+    - Indian food vocabulary injection
+    - Fuzzy matching for dish name correction
     - Response caching to reduce API costs
     - Automatic language detection
-    - Cost tracking and monitoring
-    - Fallback error handling
+    - Noisy audio handling
     """
+    
+    # CRITICAL: Comprehensive Indian food vocabulary for Whisper prompt
+    INDIAN_FOOD_VOCABULARY = [
+        # Popular North Indian dishes
+        "paneer tikka", "butter chicken", "dal makhani", "chole bhature", 
+        "aloo gobi", "palak paneer", "rajma", "kadai paneer", "malai kofta",
+        "naan", "roti", "paratha", "kulcha", "bhatura",
+        
+        # South Indian dishes
+        "dosa", "idli", "vada", "sambhar", "rasam", "uttapam", "pongal",
+        "upma", "medu vada", "masala dosa", "rava dosa", "set dosa",
+        
+        # Rice dishes
+        "biryani", "pulao", "khichdi", "curd rice", "lemon rice", "tamarind rice",
+        "hyderabadi biryani", "lucknowi biryani", "vegetable pulao",
+        
+        # Snacks & Street Food
+        "samosa", "pakora", "bhaji", "pav bhaji", "vada pav", "chaat",
+        "aloo tikki", "dahi vada", "kachori", "jalebi", "dhokla",
+        
+        # Curries & Gravies
+        "curry", "sabzi", "sabji", "kuzhambu", "koora", "bhaji",
+        "aloo curry", "tomato curry", "egg curry", "chicken curry",
+        
+        # Sweets
+        "gulab jamun", "rasgulla", "kheer", "halwa", "laddu", "barfi",
+        "payasam", "shrikhand", "rabri", "kulfi",
+        
+        # Common ingredients (for "X without Y" queries)
+        "onion", "garlic", "tomato", "potato", "paneer", "chicken",
+        "mutton", "fish", "prawn", "mushroom", "capsicum",
+        
+        # Vernacular terms
+        "pyaz", "lahsun", "aloo", "tamatar", "mirch", "haldi",
+        "jeera", "dhaniya", "kanda", "batata", "vengayam",
+        
+        # Cooking styles
+        "tandoori", "masala", "makhani", "kadai", "tawa", "dum",
+        
+        # Dietary terms
+        "jain", "vegan", "vegetarian", "satvik", "no onion", "no garlic"
+    ]
+    
+    # Common transcription errors and corrections
+    COMMON_CORRECTIONS = {
+        # Phonetic variations
+        "panel": "paneer",
+        "panir": "paneer",
+        "panner": "paneer",
+        "doser": "dosa",
+        "dosai": "dosa",
+        "idly": "idli",
+        "wada": "vada",
+        "biriyani": "biryani",
+        "pulav": "pulao",
+        "poori": "puri",
+        "rotti": "roti",
+        "chapathi": "chapati",
+        "aalu": "aloo",
+        "alu": "aloo",
+        "pyaaz": "pyaz",
+        "piyaz": "pyaz",
+        "lasan": "lahsun",
+        "lasun": "lahsun",
+        "tamater": "tamatar",
+        "tomater": "tamatar",
+        
+        # Common mishearings
+        "better chicken": "butter chicken",
+        "dollar": "dal",
+        "doll": "dal",
+        "cholay": "chole",
+        "chole bhatura": "chole bhature",
+        "power": "palak",
+        "malai coffee": "malai kofta",
+        
+        # Negation corrections
+        "no onions": "no onion",
+        "without onions": "without onion",
+        "no garlics": "no garlic",
+        "without garlics": "without garlic",
+    }
     
     def __init__(self):
         self.api_key = os.getenv("OPENAI_API_KEY")
@@ -44,9 +129,111 @@ class WhisperService:
         self.cache: Dict[str, Tuple[Dict, float]] = {}
         self.cache_ttl = 3600  # 1 hour
         
-        print("🎤 Whisper Service initialized")
+        # Load knowledge graph vocabulary (if available)
+        self.knowledge_graph_dishes = self._load_knowledge_graph_vocabulary()
+        
+        print("🎤 Whisper Service initialized (ENHANCED)")
         print(f"   Model: {self.model}")
         print(f"   Cost: ${self.cost_per_minute} per minute")
+        print(f"   Food vocabulary: {len(self.INDIAN_FOOD_VOCABULARY)} terms")
+        print(f"   Knowledge graph dishes: {len(self.knowledge_graph_dishes)} loaded")
+    
+    def _load_knowledge_graph_vocabulary(self) -> List[str]:
+        """
+        Load dish names from your knowledge graph/database
+        This helps with fuzzy matching against actual available recipes
+        """
+        try:
+            # Try to load from a vocabulary file (you can generate this from your DB)
+            vocab_path = os.path.join(os.path.dirname(__file__), "nlp_data", "dish_vocabulary.json")
+            if os.path.exists(vocab_path):
+                with open(vocab_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception as e:
+            print(f"   ⚠️  Could not load knowledge graph vocabulary: {e}")
+        
+        # Fallback: return empty list (fuzzy matching will use INDIAN_FOOD_VOCABULARY)
+        return []
+    
+    def _generate_food_prompt(self, language_hint: Optional[str] = None) -> str:
+        """
+        Generate context-rich prompt for Whisper with food vocabulary
+        This DRAMATICALLY improves accuracy for food-related queries
+        """
+        # Base prompt with common dish names (helps Whisper recognize them)
+        prompt_parts = [
+            "Recipe search query with Indian dishes:",
+            ", ".join(self.INDIAN_FOOD_VOCABULARY[:50])  # First 50 terms
+        ]
+        
+        # Add language-specific context
+        if language_hint == "hi":
+            prompt_parts.append("Hindi food terms: pyaz, lahsun, aloo, tamatar, sabzi, dal, roti, paneer")
+        elif language_hint == "ta":
+            prompt_parts.append("Tamil food terms: vengayam, thakkali, dosa, idli, sambhar, rasam")
+        elif language_hint == "te":
+            prompt_parts.append("Telugu food terms: ullipaya, tamata, biryani, koora, vada")
+        elif language_hint == "ml":
+            prompt_parts.append("Malayalam food terms: ulli, thakkali, dosa, idli, payasam")
+        elif language_hint == "kn":
+            prompt_parts.append("Kannada food terms: eerulli, tomato, dosa, idli, vada")
+        elif language_hint == "bn":
+            prompt_parts.append("Bengali food terms: piyaj, aalu, rasgulla, mishti")
+        
+        # Common query patterns
+        prompt_parts.append("Common phrases: without onion, no garlic, quick recipe, spicy, healthy")
+        
+        return " ".join(prompt_parts)
+    
+    def _apply_fuzzy_correction(self, text: str) -> Tuple[str, List[str]]:
+        """
+        Apply fuzzy matching to correct common transcription errors
+        Returns: (corrected_text, list_of_corrections_applied)
+        """
+        corrected = text
+        corrections_applied = []
+        
+        # Step 1: Direct replacements from COMMON_CORRECTIONS
+        for wrong, right in self.COMMON_CORRECTIONS.items():
+            if wrong.lower() in corrected.lower():
+                corrected = corrected.replace(wrong, right)
+                corrected = corrected.replace(wrong.capitalize(), right.capitalize())
+                corrected = corrected.replace(wrong.upper(), right.upper())
+                corrections_applied.append(f"{wrong} → {right}")
+        
+        # Step 2: Fuzzy match individual words against vocabulary
+        words = corrected.split()
+        corrected_words = []
+        
+        for word in words:
+            word_lower = word.lower()
+            
+            # Skip short words and common words
+            if len(word_lower) < 4 or word_lower in ['with', 'without', 'quick', 'spicy']:
+                corrected_words.append(word)
+                continue
+            
+            # Try fuzzy matching against food vocabulary
+            all_vocab = self.INDIAN_FOOD_VOCABULARY + self.knowledge_graph_dishes
+            matches = get_close_matches(word_lower, 
+                                       [v.lower() for v in all_vocab], 
+                                       n=1, 
+                                       cutoff=0.75)  # 75% similarity threshold
+            
+            if matches:
+                # Find the original case version
+                matched_word = next((v for v in all_vocab if v.lower() == matches[0]), matches[0])
+                if matched_word.lower() != word_lower:
+                    corrected_words.append(matched_word)
+                    corrections_applied.append(f"{word} → {matched_word}")
+                else:
+                    corrected_words.append(word)
+            else:
+                corrected_words.append(word)
+        
+        corrected = " ".join(corrected_words)
+        
+        return corrected, corrections_applied
     
     def _get_cache_key(self, audio_data: bytes) -> str:
         """Generate cache key from audio data hash"""
@@ -83,21 +270,26 @@ class WhisperService:
         audio_file: bytes, 
         filename: str = "audio.webm",
         language: Optional[str] = None,
-        prompt: Optional[str] = None
+        prompt: Optional[str] = None,
+        enable_fuzzy_correction: bool = True
     ) -> Dict:
         """
         Transcribe audio to text using OpenAI Whisper API
+        ENHANCED with Indian food vocabulary and fuzzy correction
         
         Args:
             audio_file: Audio file bytes (supports mp3, mp4, mpeg, mpga, m4a, wav, webm)
             filename: Original filename (helps with format detection)
             language: Optional ISO-639-1 language code (e.g., 'en', 'hi', 'ta')
-                     If not provided, Whisper will auto-detect
-            prompt: Optional text prompt to guide transcription (e.g., food-related terms)
+                     If None, Whisper will auto-detect (recommended for Indian languages)
+            prompt: Optional custom prompt (if None, uses food-optimized prompt)
+            enable_fuzzy_correction: Apply fuzzy matching to correct errors (default: True)
         
         Returns:
             Dict with:
-                - text: Transcribed text
+                - text: Transcribed text (corrected)
+                - raw_text: Original transcription before correction
+                - corrections_applied: List of corrections made
                 - language: Detected language code
                 - duration: Estimated audio duration in minutes
                 - cost: Estimated cost in USD
@@ -115,7 +307,7 @@ class WhisperService:
         estimated_duration = self._estimate_duration(len(audio_file))
         estimated_cost = estimated_duration * self.cost_per_minute
         
-        print(f"\n🎤 Whisper Transcription:")
+        print(f"\n🎤 Whisper Transcription (ENHANCED):")
         print(f"   File: {filename} ({len(audio_file) / 1024:.1f} KB)")
         print(f"   Estimated duration: {estimated_duration:.2f} minutes")
         print(f"   Estimated cost: ${estimated_cost:.6f}")
@@ -131,22 +323,21 @@ class WhisperService:
                 "response_format": "json"
             }
             
-            # Add optional parameters
-            # Default to English if not specified (more accurate for Indian accents)
-            if language is None:
-                language = "en"  # Force English by default
+            # CRITICAL: Language handling
+            # For Indian accents, auto-detection often works better than forcing English
+            # But we can provide a hint
+            if language:
+                data["language"] = language
+                print(f"   Language hint: {language}")
+            else:
+                print(f"   Language: auto-detect (recommended for Indian languages)")
             
-            data["language"] = language
-            print(f"   Language hint: {language}")
-            
-            # Food-specific prompt to improve accuracy
+            # CRITICAL: Use food-optimized prompt
             if prompt is None:
-                prompt = (
-                    "This is a food recipe search query in English. "
-                    "It may contain dish names like dal, paneer, biryani, pasta. "
-                    "Common words: without, garlic, onion, quick, spicy, healthy."
-                )
+                prompt = self._generate_food_prompt(language)
+            
             data["prompt"] = prompt
+            print(f"   Prompt length: {len(prompt)} chars")
             
             # Make API request with better error handling
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -167,7 +358,19 @@ class WhisperService:
                 raise Exception(f"Whisper API error: {response.status_code} - {error_detail}")
             
             result = response.json()
-            transcribed_text = result.get("text", "").strip()
+            raw_transcription = result.get("text", "").strip()
+            
+            # Apply fuzzy correction
+            corrected_text = raw_transcription
+            corrections_applied = []
+            
+            if enable_fuzzy_correction:
+                corrected_text, corrections_applied = self._apply_fuzzy_correction(raw_transcription)
+                
+                if corrections_applied:
+                    print(f"   🔧 Applied {len(corrections_applied)} corrections:")
+                    for correction in corrections_applied:
+                        print(f"      • {correction}")
             
             # Update tracking
             self.total_requests += 1
@@ -176,13 +379,18 @@ class WhisperService:
             
             elapsed = time.time() - start_time
             
-            print(f"   ✅ Transcribed: '{transcribed_text}'")
+            print(f"   ✅ Raw: '{raw_transcription}'")
+            if corrected_text != raw_transcription:
+                print(f"   ✅ Corrected: '{corrected_text}'")
+            print(f"   🌍 Language: {result.get('language', 'unknown')}")
             print(f"   ⏱️  Duration: {elapsed:.2f}s")
             print(f"   💰 Cost: ${estimated_cost:.6f} | Total: ${self.total_cost:.4f} ({self.total_requests} requests)")
             
             # Prepare result
             result_data = {
-                "text": transcribed_text,
+                "text": corrected_text,
+                "raw_text": raw_transcription,
+                "corrections_applied": corrections_applied,
                 "language": result.get("language", "unknown"),
                 "duration_minutes": estimated_duration,
                 "cost_usd": estimated_cost,
@@ -244,7 +452,9 @@ class WhisperService:
             "total_duration_minutes": round(self.total_duration, 2),
             "total_cost_usd": round(self.total_cost, 4),
             "cache_size": len(self.cache),
-            "average_cost_per_request": round(self.total_cost / max(1, self.total_requests), 6)
+            "average_cost_per_request": round(self.total_cost / max(1, self.total_requests), 6),
+            "vocabulary_size": len(self.INDIAN_FOOD_VOCABULARY),
+            "knowledge_graph_dishes": len(self.knowledge_graph_dishes)
         }
     
     def clear_cache(self):
@@ -252,6 +462,15 @@ class WhisperService:
         cache_size = len(self.cache)
         self.cache.clear()
         print(f"🗑️  Cleared Whisper cache ({cache_size} entries)")
+    
+    def add_vocabulary(self, terms: List[str]):
+        """
+        Dynamically add new food terms to vocabulary
+        Useful for adding new dishes from your knowledge graph
+        """
+        new_terms = [term for term in terms if term not in self.INDIAN_FOOD_VOCABULARY]
+        self.INDIAN_FOOD_VOCABULARY.extend(new_terms)
+        print(f"📚 Added {len(new_terms)} new terms to vocabulary")
 
 
 # Global service instance

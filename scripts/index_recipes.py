@@ -1,6 +1,7 @@
 """
 Indexer Script.
 Reads from data/updated_recipes.jsonl and indexes to Typesense using the SearchClient.
+Supports resuming from last indexed position using a progress file.
 """
 
 import sys
@@ -15,12 +16,36 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.api.search_client import SearchClient
 
 DATA_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'updated_recipes.jsonl')
+PROGRESS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.recipes_progress')
 
-def load_recipes_generator(file_path):
+def load_progress():
+    """Load the last indexed line number from progress file."""
+    if os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE, 'r') as f:
+            try:
+                return int(f.read().strip())
+            except:
+                return 0
+    return 0
+
+def save_progress(line_num):
+    """Save the current progress to file."""
+    with open(PROGRESS_FILE, 'w') as f:
+        f.write(str(line_num))
+
+def clear_progress():
+    """Clear progress file when done."""
+    if os.path.exists(PROGRESS_FILE):
+        os.remove(PROGRESS_FILE)
+
+def load_recipes_generator(file_path, start_line=0):
+    """Generator that yields recipes starting from a specific line."""
     with open(file_path, 'r', encoding='utf-8') as f:
-        for line in f:
+        for line_num, line in enumerate(f):
+            if line_num < start_line:
+                continue
             if line.strip():
-                yield json.loads(line)
+                yield line_num, json.loads(line)
 
 def parse_instructions(instructions_data):
     """Parse instructions into a list of strings."""
@@ -68,32 +93,42 @@ def transform(item):
     }
 
 def main():
-    print("Initializing Search Client...")
+    print("Initializing Search Client...", flush=True)
     client = SearchClient()
     client.ensure_collection()
     
-    print(f"Reading from {DATA_FILE}...")
+    # Check for resume point
+    start_line = load_progress()
+    if start_line > 0:
+        print(f"Resuming from line {start_line}...", flush=True)
+    
+    print(f"Reading from {DATA_FILE}...", flush=True)
     
     batch_size = 500
     batch = []
-    count = 0
+    count = start_line  # Start count from resume point
+    last_line = start_line
     
-    for raw_item in load_recipes_generator(DATA_FILE):
+    for line_num, raw_item in load_recipes_generator(DATA_FILE, start_line):
         doc = transform(raw_item)
         if doc:
             batch.append(doc)
+            last_line = line_num + 1
             
         if len(batch) >= batch_size:
             client.index_documents(batch)
             count += len(batch)
-            print(f"Indexed {count} recipes...")
+            save_progress(last_line)  # Save progress after each batch
+            print(f"Indexed {count} recipes (line {last_line})...", flush=True)
             batch = []
             
     if batch:
         client.index_documents(batch)
         count += len(batch)
+        save_progress(last_line)
         
-    print(f"Done! Total indexed: {count}")
+    print(f"Done! Total indexed: {count}", flush=True)
+    clear_progress()  # Clear progress file when complete
 
 if __name__ == "__main__":
     main()

@@ -1,15 +1,59 @@
-version: '3.4'
+version: '3.8'
+
 services:
   typesense:
     image: typesense/typesense:26.0
-    restart: on-failure
+    container_name: nlp-typesense
+    restart: always
     ports:
-      - "8108:8108"
+      - "8109:8108"
     volumes:
       - ./typesense-data:/data
-    command: '--data-dir /data --api-key=xyz --enable-cors'
+    environment:
+      - TYPESENSE_DATA_DIR=/data
+      - TYPESENSE_API_KEY=${TYPESENSE_API_KEY:-xyz123}
+      - TYPESENSE_ENABLE_CORS=true
+    command: '--data-dir /data --api-key=${TYPESENSE_API_KEY:-xyz123} --enable-cors'
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8108/health"]
       interval: 30s
       timeout: 10s
       retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nlp-backend
+    restart: always
+    ports:
+      - "8001:8000"
+    environment:
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - XAI_API_KEY=${XAI_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - TYPESENSE_HOST=typesense
+      - TYPESENSE_PORT=8108
+      - TYPESENSE_API_KEY=xyz123
+      - TYPESENSE_PROTOCOL=http
+      - CORS_ORIGINS=http://43.205.136.103:3001,http://localhost:3001
+    depends_on:
+      - typesense
+    volumes:
+      - ./data:/data
+    command: uvicorn app.api.main:app --host 0.0.0.0 --port 8000
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://43.205.136.103:8001
+    container_name: nlp-frontend
+    restart: always
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend

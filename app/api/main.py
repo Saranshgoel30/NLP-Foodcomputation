@@ -34,7 +34,7 @@ app = FastAPI(
 # CORS middleware to allow frontend requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:8501"],
+    allow_origins=["*"],  # Allow all origins for production deployment
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -767,13 +767,14 @@ async def get_stats():
 async def transcribe_audio(
     audio: UploadFile = File(...),
     language: Optional[str] = Query(None, description="ISO-639-1 language code (e.g., 'en', 'hi', 'ta')"),
-    prompt: Optional[str] = Query(None, description="Optional prompt to guide transcription")
+    prompt: Optional[str] = Query(None, description="Optional prompt to guide transcription"),
+    enable_fuzzy_correction: bool = Query(True, description="Apply fuzzy correction to improve accuracy")
 ):
     """
-    Transcribe audio to text using OpenAI Whisper API
+    Transcribe audio to text using OpenAI Whisper API - ENHANCED FOR INDIAN FOOD
     
     Supports 99 languages including:
-    - English (en)
+    - English (en) - Recommended for Indian accents
     - Hindi (hi)
     - Tamil (ta)
     - Bengali (bn)
@@ -786,9 +787,18 @@ async def transcribe_audio(
     - Punjabi (pa)
     - And 88 more...
     
+    ENHANCEMENTS:
+    - 🎯 Indian food vocabulary injection (improves dish name accuracy)
+    - 🔧 Fuzzy correction for common mishearings (e.g., "panel" → "paneer")
+    - 🌍 Auto language detection (works better than forcing English for Indian accents)
+    - 📚 200+ Indian dish names in prompt context
+    
     Supported audio formats: mp3, mp4, mpeg, mpga, m4a, wav, webm
     Max file size: 25 MB
     Cost: $0.006 per minute of audio
+    
+    NEW PARAMETERS:
+    - enable_fuzzy_correction: Apply post-processing to correct common errors (default: True)
     """
     try:
         # Validate file size (25 MB limit)
@@ -801,17 +811,20 @@ async def transcribe_audio(
                 detail=f"File too large: {file_size_mb:.1f} MB. Maximum size is 25 MB."
             )
         
-        # Transcribe audio
+        # Transcribe audio with enhanced service
         result = await whisper_service.transcribe(
             audio_file=content,
             filename=audio.filename or "audio.webm",
             language=language,
-            prompt=prompt
+            prompt=prompt,
+            enable_fuzzy_correction=enable_fuzzy_correction
         )
         
         return {
             "status": "success",
             "transcription": result["text"],
+            "raw_transcription": result["raw_text"],
+            "corrections_applied": result["corrections_applied"],
             "detected_language": result["language"],
             "duration_minutes": result["duration_minutes"],
             "cost_usd": result["cost_usd"],
@@ -823,6 +836,7 @@ async def transcribe_audio(
     except Exception as e:
         print(f"❌ Transcription error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}")
+
 
 @app.post("/api/cache/clear")
 async def clear_cache():

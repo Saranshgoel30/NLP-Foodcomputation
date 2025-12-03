@@ -64,7 +64,7 @@ export default function ChipInput({
     inputRef.current?.focus()
   }
 
-  const isMaxReached = maxChips && values.length >= maxChips
+  const isMaxReached = typeof maxChips === 'number' ? values.length >= maxChips : false
 
   return (
     <div

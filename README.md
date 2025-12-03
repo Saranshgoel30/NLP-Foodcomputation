@@ -8,7 +8,96 @@ A cutting-edge recipe search platform powered by advanced AI, semantic understan
 
 ---
 
-## ✨ Key Features
+## 🌐 Live Demo
+
+**Production URL**: http://43.205.136.103:3001
+
+| Service | URL | Port |
+|---------|-----|------|
+| Frontend | http://43.205.136.103:3001 | 3001 |
+| Backend API | http://43.205.136.103:8001 | 8001 |
+| API Documentation | http://43.205.136.103:8001/docs | 8001 |
+
+> **Note**: Voice search requires HTTPS or localhost due to browser security. For testing voice features locally, run on `localhost:3000`.
+
+---
+
+## 📦 Input Data & Databases
+
+### Recipe Database (`data/recipes.jsonl`)
+- **9,668 recipes** with full metadata
+- Fields: title, description, ingredients, instructions, cuisine, diet, course, prep_time, cook_time, image_url
+- Source: Curated Indian & international recipe collection
+
+### Ingredients Database (`data/ingredients.jsonl`)
+- **4,217 ingredients** with aliases and substitutes
+- Multilingual support (English, Hindi, regional languages)
+- Used for smart ingredient matching and exclusion
+
+### Query Templates (`data/queries.jsonl`)
+- **10,000 search query templates**
+- Used for autocomplete suggestions
+- Covers common recipe search patterns
+
+### Indexed Data (Typesense)
+All data is indexed with **768-dimensional semantic embeddings** using the `paraphrase-multilingual-mpnet-base-v2` model for semantic search.
+
+---
+
+## 📤 Output Examples
+
+### Search Query: "paneer without onion"
+
+**Input:**
+```json
+{
+  "query": "paneer without onion",
+  "language": "English"
+}
+```
+
+**LLM Processing Output:**
+```json
+{
+  "base_query": "paneer",
+  "include_ingredients": [],
+  "exclude_ingredients": ["onion", "onions", "pyaaz", "kanda", "spring onion", "red onion", "white onion", "green onion", "shallots", "chopped onion", "sliced onion", "diced onion", "onion paste", "pearl onions", "pyaz", "onion cubes"],
+  "tags": []
+}
+```
+
+**Search Output:**
+```json
+{
+  "found": 69,
+  "total_pages": 4,
+  "hits": [
+    {
+      "title": "Paneer Tikka Recipe",
+      "cuisine": "North Indian",
+      "diet": "Vegetarian",
+      "prep_time": 20,
+      "cook_time": 15
+    },
+    // ... 68 more results
+  ]
+}
+```
+
+### Multilingual Query: "प्याज़ के बिना दाल"
+
+**Translation & Processing:**
+```json
+{
+  "original_query": "प्याज़ के बिना दाल",
+  "translated_query": "dal without onion",
+  "detected_language": "Hindi",
+  "base_query": "dal",
+  "exclude_ingredients": ["onion", "pyaaz", "kanda", ...]
+}
+```
+
+---
 
 ### 🎤 **Voice Search** (NEW!)
 - **Speech-to-Text**: OpenAI Whisper API with 99 language support
@@ -542,6 +631,34 @@ curl -X POST http://localhost:8000/api/cache/clear
 
 ## 🚀 Deployment
 
+### Current Production Deployment
+
+The platform is deployed on **AWS Lightsail** (16GB RAM, 4 vCPU):
+
+```
+Server: 43.205.136.103
+├── nlp-frontend (Port 3001) - Next.js Frontend
+├── nlp-backend (Port 8001) - FastAPI Backend  
+└── nlp-typesense (Port 8108 internal) - Typesense Search Engine
+```
+
+**Deployment Commands:**
+```bash
+# SSH into server
+ssh -i aws-key.pem bitnami@43.205.136.103
+
+# View running containers
+sg docker -c 'docker ps'
+
+# View logs
+sg docker -c 'docker logs nlp-backend --tail 100'
+sg docker -c 'docker logs nlp-frontend --tail 100'
+
+# Restart services
+cd ~/NLP-Foodcomputation
+sg docker -c 'docker compose restart'
+```
+
 ### Production Checklist
 - [ ] Set production API keys in `.env`
 - [ ] Update CORS origins for production domain
@@ -612,4 +729,31 @@ For issues, questions, or contributions:
 
 **Built with ❤️ for intelligent multilingual food discovery**
 
-*Last Updated: November 24, 2025*
+*Last Updated: December 4, 2025*
+
+---
+
+## 📊 Project Statistics
+
+| Metric | Value |
+|--------|-------|
+| **Total Recipes Indexed** | 9,668 |
+| **Total Ingredients** | 4,217 |
+| **Query Templates** | 10,000 |
+| **Languages Supported** | 99 |
+| **Average Search Time** | ~70ms |
+| **Deployment Storage** | ~33 GB |
+
+---
+
+## 👥 Authors
+
+- **Saransh Goel** - Ashoka University Capstone Project
+
+---
+
+## 📧 Contact
+
+For questions about this project:
+- GitHub: [@Saranshgoel30](https://github.com/Saranshgoel30)
+- Repository: [NLP-Foodcomputation](https://github.com/Saranshgoel30/NLP-Foodcomputation)
