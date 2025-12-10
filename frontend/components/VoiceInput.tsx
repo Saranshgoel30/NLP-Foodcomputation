@@ -1,14 +1,15 @@
 'use client'
 
 import { useState, useRef } from 'react'
-import { Mic, MicOff, Loader2 } from 'lucide-react'
+import { Mic, MicOff, Loader2, AlertCircle } from 'lucide-react'
 
 interface VoiceInputProps {
   onTranscription: (text: string) => void
+  language: string  // CRITICAL: Language is now required from parent
   disabled?: boolean
 }
 
-export default function VoiceInput({ onTranscription, disabled = false }: VoiceInputProps) {
+export default function VoiceInput({ onTranscription, language, disabled = false }: VoiceInputProps) {
   const [isRecording, setIsRecording] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -17,6 +18,12 @@ export default function VoiceInput({ onTranscription, disabled = false }: VoiceI
   const chunksRef = useRef<Blob[]>([])
 
   const startRecording = async () => {
+    // CRITICAL: Check if language is selected
+    if (!language) {
+      setError('Please select a language before recording')
+      return
+    }
+
     try {
       setError(null)
       
@@ -79,14 +86,20 @@ export default function VoiceInput({ onTranscription, disabled = false }: VoiceI
       
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       
-      // Force English language for better accuracy with Indian accents
-      const response = await fetch(`${API_URL}/api/transcribe?language=en`, {
+      // CRITICAL: Send language parameter
+      const response = await fetch(`${API_URL}/api/transcribe?language=${language}`, {
         method: 'POST',
         body: formData,
       })
       
       if (!response.ok) {
         const errorData = await response.json()
+        
+        // Handle language_required error specifically
+        if (errorData.error === 'language_required') {
+          throw new Error('Please select a language before recording')
+        }
+        
         throw new Error(errorData.detail || 'Transcription failed')
       }
       
@@ -95,9 +108,15 @@ export default function VoiceInput({ onTranscription, disabled = false }: VoiceI
       if (data.status === 'success' && data.transcription) {
         onTranscription(data.transcription)
         
-        // Show language detected (optional feedback)
+        // Show success feedback
+        console.log('✅ Transcription successful')
         console.log('Detected language:', data.detected_language)
         console.log('Cost:', `$${data.cost_usd.toFixed(6)}`)
+        
+        // Show warnings if any
+        if (data.warnings && data.warnings.length > 0) {
+          console.warn('⚠️ Warnings:', data.warnings)
+        }
       } else {
         throw new Error('No transcription received')
       }
@@ -118,21 +137,32 @@ export default function VoiceInput({ onTranscription, disabled = false }: VoiceI
     }
   }
 
+  // Check if disabled due to no language selection
+  const isDisabledNoLang = !language
+
   return (
     <div className="flex flex-col items-center gap-2">
       <button
         onClick={handleClick}
-        disabled={disabled || isProcessing}
+        disabled={disabled || isProcessing || isDisabledNoLang}
         className={`
           p-3 rounded-full transition-all duration-300 shadow-lg
           ${isRecording 
             ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+            : isDisabledNoLang
+            ? 'bg-gray-600 cursor-not-allowed'
             : 'bg-blue-500 hover:bg-blue-600'
           }
-          ${(disabled || isProcessing) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-110'}
+          ${(disabled || isProcessing || isDisabledNoLang) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:scale-110'}
           text-white
         `}
-        title={isRecording ? 'Stop recording' : 'Start voice search'}
+        title={
+          isDisabledNoLang 
+            ? 'Please select a language first' 
+            : isRecording 
+            ? 'Stop recording' 
+            : 'Start voice search'
+        }
       >
         {isProcessing ? (
           <Loader2 className="w-6 h-6 animate-spin" />
@@ -142,6 +172,14 @@ export default function VoiceInput({ onTranscription, disabled = false }: VoiceI
           <Mic className="w-6 h-6" />
         )}
       </button>
+      
+      {/* Status messages */}
+      {isDisabledNoLang && (
+        <div className="text-sm text-yellow-400 font-medium flex items-center gap-1">
+          <AlertCircle className="w-4 h-4" />
+          <span>Select language first</span>
+        </div>
+      )}
       
       {isRecording && (
         <div className="text-sm text-red-500 font-medium animate-pulse">

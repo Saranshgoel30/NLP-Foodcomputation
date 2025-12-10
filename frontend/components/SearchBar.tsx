@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import axios from 'axios'
 import { Search, Loader2 } from 'lucide-react'
 import VoiceInput from './VoiceInput'
+import LanguageSelector from './LanguageSelector'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
@@ -18,6 +19,10 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [loading, setLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
+  
+  // Language state for voice input
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('en') // Default to English
+  
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)
 
@@ -115,8 +120,10 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
   }
 
   return (
-    <div className="relative w-full max-w-5xl mx-auto">
+    <div className="w-full max-w-5xl mx-auto space-y-4">
+      {/* Main Search Row */}
       <div className="relative flex gap-3">
+        {/* Search Input */}
         <div className="relative flex-1">
           <input
             ref={inputRef}
@@ -138,12 +145,6 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
           )}
         </div>
         
-        {/* Voice Input Button */}
-        <VoiceInput 
-          onTranscription={handleVoiceTranscription}
-          disabled={loading}
-        />
-        
         {/* Search Button */}
         <button
           onClick={handleSearchClick}
@@ -155,9 +156,36 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
         </button>
       </div>
 
+      {/* Voice Input Row */}
+      <div className="flex items-end gap-4 bg-slate-800 rounded-lg p-4 border border-slate-700">
+        {/* Language Selector */}
+        <div className="flex-1 max-w-xs">
+          <LanguageSelector
+            value={selectedLanguage}
+            onChange={setSelectedLanguage}
+            disabled={false}
+          />
+        </div>
+
+        {/* Divider */}
+        <div className="h-12 w-px bg-slate-700"></div>
+
+        {/* Voice Button */}
+        <div className="flex flex-col items-center">
+          <label className="block text-xs font-semibold text-gray-400 mb-1.5 uppercase tracking-wide text-center">
+            Voice Search
+          </label>
+          <VoiceInput 
+            onTranscription={handleVoiceTranscription}
+            language={selectedLanguage}
+            disabled={loading}
+          />
+        </div>
+      </div>
+
       {/* Hint */}
       {value.trim() && !showSuggestions && (
-        <div className="mt-2 text-sm text-gray-400 text-center flex items-center justify-center gap-2">
+        <div className="text-sm text-gray-400 text-center flex items-center justify-center gap-2">
           <span>Press</span>
           <kbd className="px-2 py-1 bg-slate-800 border border-slate-600 rounded text-blue-400 font-mono text-xs">Enter</kbd>
           <span>to search</span>
@@ -169,6 +197,7 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
         <div
           ref={suggestionsRef}
           className="absolute z-50 w-full mt-2 bg-slate-800 border-2 border-slate-600 rounded-lg shadow-2xl overflow-hidden"
+          style={{ maxWidth: 'calc(100% - 120px)' }}
         >
           <div className="px-4 py-2 bg-slate-700 border-b border-slate-600">
             <p className="text-xs font-bold text-gray-400 uppercase tracking-wide">

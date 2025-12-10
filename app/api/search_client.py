@@ -335,6 +335,7 @@ class SearchClient:
                 continue
             
             # Check requirements with comprehensive matching (title + ingredients + description)
+            # For EACH required ingredient, check if ANY of its aliases appears in the recipe
             has_all_required = True
             for required_ingredient in required:
                 # Look up the family key for this ingredient
@@ -342,42 +343,62 @@ class SearchClient:
                 
                 # Get all patterns for this ingredient family
                 patterns_data = ingredient_patterns.get(family_key, {})
+                # IMPORTANT: Get ALL aliases for this ingredient family so we can match ANY variant
                 aliases = patterns_data.get('aliases', [required_ingredient.lower()])
+                
+                # Also include the original ingredient and family key as aliases
+                all_aliases = set(aliases)
+                all_aliases.add(required_ingredient.lower())
+                all_aliases.add(family_key.lower())
                 
                 # Check in multiple places: title first, then ingredients, then description
                 found = False
+                matched_alias = None
                 
                 # 1. Check title
-                for alias in aliases:
+                for alias in all_aliases:
                     if alias in recipe_name:
                         found = True
+                        matched_alias = alias
                         break
                 
                 # 2. Check ingredients
                 if not found:
                     for recipe_ing in ingredients_lower:
-                        for alias in aliases:
+                        for alias in all_aliases:
                             if alias in recipe_ing:
                                 found = True
+                                matched_alias = alias
                                 break
                         if found:
                             break
                 
                 # 3. Check description as fallback
                 if not found:
-                    for alias in aliases:
+                    for alias in all_aliases:
                         if re.search(r'\b' + re.escape(alias) + r'\b', description):
                             found = True
+                            matched_alias = alias
                             break
                 
                 if not found:
                     has_all_required = False
+                    # Debug: log why this recipe was excluded
+                    # print(f"   ⛔ '{recipe_name[:30]}...' missing required: {required_ingredient}")
                     break
             
             if not has_all_required:
                 continue
             
             filtered.append(hit)
+        
+        # Summary logging
+        if required:
+            print(f"     ✅ Required filter: {len(hits)} → {len(filtered)} recipes (looking for: {required})")
+        if excluded:
+            excluded_count = len(hits) - len(filtered) if not required else 0
+            if excluded_count > 0:
+                print(f"     ❌ Excluded filter removed: {excluded_count} recipes")
         
         return filtered
 

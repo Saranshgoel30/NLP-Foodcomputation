@@ -168,7 +168,8 @@ client = None
 client_loading = False
 
 async def get_search_client():
-    """Lazily initialize search client on first use"""
+    """Lazily initialize search client on first use
+       and load recipe vocabulary into Whisper service"""
     global client, client_loading
     
     if client is not None:
@@ -179,6 +180,10 @@ async def get_search_client():
         print("📦 Initializing Typesense search client...")
         client = SearchClient()
         print("✅ Typesense search client ready!")
+        
+        # Load database vocabulary into Whisper service
+        print("📚 Loading recipe vocabulary into Whisper...")
+        whisper_service.load_database_vocabulary(client)
     
     return client
 
@@ -454,16 +459,20 @@ async def search_recipes(
         search_client = await get_search_client()
         
         # Extract final ingredient lists
+        # NOTE: Do NOT expand required ingredients here - _filter_by_ingredients handles alias expansion internally
+        # Expanding here would require ALL aliases to match instead of ANY alias
         if use_structured:
-            # For structured mode, expand ingredients through the parser
-            print(f"  📦 Expanding ingredients for structured query...")
+            # For structured mode, expand ONLY exclusions (exclusions work differently - we want to block ALL variants)
+            print(f"  📦 Processing ingredients for structured query...")
             excluded_ingredients = enhanced_parser._expand_ingredient_aliases(excluded_ingredients_list) if excluded_ingredients_list else []
-            required_ingredients = enhanced_parser._expand_ingredient_aliases(required_ingredients_list) if required_ingredients_list else []
+            # Keep required ingredients as-is - alias lookup happens in _filter_by_ingredients
+            required_ingredients = required_ingredients_list
             print(f"     Excluded: {len(excluded_ingredients_list)} → {len(excluded_ingredients)} variants")
-            print(f"     Required: {len(required_ingredients_list)} → {len(required_ingredients)} variants")
+            print(f"     Required: {required_ingredients} (alias lookup in filter)")
         else:
-            # For traditional mode, ingredients are already expanded by parse_query
+            # For traditional mode, exclusions are already expanded by parse_query
             excluded_ingredients = parsed.get('excluded_ingredients', [])
+            # Keep required as original list - do NOT expand (same logic as structured mode)
             required_ingredients = parsed.get('required_ingredients', [])
         
         # CLEAN GENERIC TERMS: Remove "sabzi", "vegetable", "curry" etc.
@@ -766,15 +775,15 @@ async def get_stats():
 @app.post("/api/transcribe")
 async def transcribe_audio(
     audio: UploadFile = File(...),
-    language: Optional[str] = Query(None, description="ISO-639-1 language code (e.g., 'en', 'hi', 'ta')"),
+    language: Optional[str] = Query(None, description="ISO-639-1 language code (REQUIRED for accurate transcription)"),
     prompt: Optional[str] = Query(None, description="Optional prompt to guide transcription"),
-    enable_fuzzy_correction: bool = Query(True, description="Apply fuzzy correction to improve accuracy")
+    enable_fuzzy_correction: bool = Query(True, description="Apply fuzzy correction (only for English)")
 ):
     """
-    Transcribe audio to text using OpenAI Whisper API - ENHANCED FOR INDIAN FOOD
+    Transcribe audio to text using OpenAI Whisper API - FIXED FOR LANGUAGE DETECTION
     
     Supports 99 languages including:
-    - English (en) - Recommended for Indian accents
+    - English (en)
     - Hindi (hi)
     - Tamil (ta)
     - Bengali (bn)
@@ -787,20 +796,22 @@ async def transcribe_audio(
     - Punjabi (pa)
     - And 88 more...
     
-    ENHANCEMENTS:
-    - 🎯 Indian food vocabulary injection (improves dish name accuracy)
-    - 🔧 Fuzzy correction for common mishearings (e.g., "panel" → "paneer")
-    - 🌍 Auto language detection (works better than forcing English for Indian accents)
-    - 📚 200+ Indian dish names in prompt context
+    CRITICAL IMPROVEMENTS:
+    - 🎯 Language parameter now REQUIRED for best accuracy
+    - 📚 Native script vocabulary injection for Indian languages
+    - 🔧 Fuzzy correction for common mishearings
+    - 📦 Database vocabulary loaded from Typesense
     
     Supported audio formats: mp3, mp4, mpeg, mpga, m4a, wav, webm
     Max file size: 25 MB
     Cost: $0.006 per minute of audio
-    
-    NEW PARAMETERS:
-    - enable_fuzzy_correction: Apply post-processing to correct common errors (default: True)
     """
     try:
+        # CRITICAL: Warn if language not provided (but don't fail)
+        warnings = []
+        if not language:
+            warnings.append("Language not specified - transcription accuracy may be reduced. Please select a language for best results.")
+            print("⚠️ Warning: No language specified")
         # Validate file size (25 MB limit)
         content = await audio.read()
         file_size_mb = len(content) / (1024 * 1024)
@@ -830,6 +841,7 @@ async def transcribe_audio(
             "cost_usd": result["cost_usd"],
             "processing_time_seconds": result["processing_time_seconds"],
             "cached": result["cached"],
+            "warnings": warnings,
             "timestamp": time.time()
         }
         
