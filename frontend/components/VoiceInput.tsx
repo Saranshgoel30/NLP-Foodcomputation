@@ -18,12 +18,6 @@ export default function VoiceInput({ onTranscription, language, disabled = false
   const chunksRef = useRef<Blob[]>([])
 
   const startRecording = async () => {
-    // CRITICAL: Check if language is selected
-    if (!language) {
-      setError('Please select a language before recording')
-      return
-    }
-
     try {
       setError(null)
       
@@ -86,20 +80,20 @@ export default function VoiceInput({ onTranscription, language, disabled = false
       
       const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
       
-      // CRITICAL: Send language parameter
-      const response = await fetch(`${API_URL}/api/transcribe?language=${language}`, {
+      // Build URL - only add language param if not auto-detect
+      let url = `${API_URL}/api/transcribe`
+      if (language && language !== 'auto') {
+        url += `?language=${language}`
+      }
+      // If 'auto', don't add language parameter (backend will auto-detect)
+      
+      const response = await fetch(url, {
         method: 'POST',
         body: formData,
       })
       
       if (!response.ok) {
         const errorData = await response.json()
-        
-        // Handle language_required error specifically
-        if (errorData.error === 'language_required') {
-          throw new Error('Please select a language before recording')
-        }
-        
         throw new Error(errorData.detail || 'Transcription failed')
       }
       

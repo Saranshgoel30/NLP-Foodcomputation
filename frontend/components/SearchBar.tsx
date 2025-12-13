@@ -20,8 +20,8 @@ export default function SearchBar({ value, onChange, onSearch }: SearchBarProps)
   const [loading, setLoading] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   
-  // Language state for voice input
-  const [selectedLanguage, setSelectedLanguage] = useState<string>('en') // Default to English
+  // Language state for voice input - Default to auto-detect
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('auto')
   
   const inputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLDivElement>(null)

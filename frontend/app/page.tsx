@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import axios from 'axios'
-import { Search, Loader2, ChefHat, Clock, Utensils, Globe } from 'lucide-react'
+import { Search, Loader2, ChefHat, Clock, Utensils, Globe, Sparkles } from 'lucide-react'
 import SearchBar from '@/components/SearchBar'
 import RecipeCard from '@/components/RecipeCard'
 import FilterSidebar from '@/components/FilterSidebar'
@@ -51,6 +51,8 @@ interface SearchResult {
   fallback_message?: string
   is_fallback?: boolean
   excluded_count?: number
+  rag_enabled?: boolean
+  ai_summary?: string
 }
 
 export default function Home() {
@@ -65,6 +67,11 @@ export default function Home() {
   })
   const [structuredQuery, setStructuredQuery] = useState<StructuredQuery | null>(null)
   const [parsingQuery, setParsingQuery] = useState(false)
+  
+  // RAG Mode state
+  const [ragEnabled, setRagEnabled] = useState(false)
+  const [aiSummary, setAiSummary] = useState<string | null>(null)
+  const [loadingRag, setLoadingRag] = useState(false)
 
   const handleSearch = useCallback(async (searchQuery: string, page: number = 1) => {
     if (!searchQuery.trim()) {
@@ -75,6 +82,10 @@ export default function Home() {
 
     setLoading(true)
     setParsingQuery(true)
+    
+    // Reset RAG state on new search
+    setRagEnabled(false)
+    setAiSummary(null)
     
     try {
       // Step 1: Parse the query into structured components
@@ -102,8 +113,10 @@ export default function Home() {
     }
   }, [filters])
   
-  const searchWithStructured = async (structured: StructuredQuery, page: number = 1) => {
+  const searchWithStructured = async (structured: StructuredQuery, page: number = 1, useRag: boolean = ragEnabled) => {
     setLoading(true)
+    if (useRag) setLoadingRag(true)
+    
     try {
       const params = new URLSearchParams({
         q: structured.original_query,
@@ -125,13 +138,34 @@ export default function Home() {
         })
       })
 
-      const response = await axios.get(`${API_URL}/api/search?${params}`)
+      // Use RAG search endpoint when enabled, otherwise regular search
+      const endpoint = useRag ? '/api/rag-search' : '/api/search'
+      console.log(`🔍 Searching with ${useRag ? 'RAG' : 'regular'} endpoint: ${API_URL}${endpoint}`)
+      const response = await axios.get(`${API_URL}${endpoint}?${params}`)
+      
       setResults(response.data)
       setCurrentPage(page)
+      
+      // RAG search returns ai_summary directly
+      if (useRag && response.data.ai_summary) {
+        // Handle both string and object formats
+        const summary = response.data.ai_summary
+        if (typeof summary === 'string') {
+          setAiSummary(summary)
+        } else if (summary && typeof summary === 'object' && summary.summary) {
+          setAiSummary(summary.summary)
+        } else {
+          setAiSummary(null)
+        }
+      } else {
+        setAiSummary(null)
+      }
     } catch (error) {
-      console.error('Search with structured params failed:', error)
+      console.error('Search failed:', error)
+      setAiSummary(null)
     } finally {
       setLoading(false)
+      setLoadingRag(false)
     }
   }
 
@@ -143,6 +177,35 @@ export default function Home() {
     }
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+  
+  // Fetch RAG summary from backend
+  const fetchRagSummary = async (searchQuery: string, hits: Recipe[]) => {
+    setLoadingRag(true)
+    try {
+      const recipeNames = hits.slice(0, 5).map(h => h.document.name).join(',')
+      const response = await axios.post(
+        `${API_URL}/api/rag-summary?query=${encodeURIComponent(searchQuery)}&recipe_names=${encodeURIComponent(recipeNames)}`
+      )
+      if (response.data.summary) {
+        setAiSummary(response.data.summary)
+      }
+    } catch (error) {
+      console.error('RAG summary failed:', error)
+      setAiSummary(null)
+    } finally {
+      setLoadingRag(false)
+    }
+  }
+  
+  // Re-search when RAG toggle changes (if we have a query)
+  useEffect(() => {
+    console.log('🔄 RAG toggle changed:', { ragEnabled, structuredQuery: !!structuredQuery })
+    if (structuredQuery) {
+      console.log('🚀 Triggering re-search with RAG:', ragEnabled)
+      // Re-search with new RAG setting
+      searchWithStructured(structuredQuery, 1, ragEnabled)
+    }
+  }, [ragEnabled])
   
   const handleStructuredUpdate = async (updated: StructuredQuery) => {
     // User edited the structured query - re-search with new parameters
@@ -205,6 +268,24 @@ export default function Home() {
               />
             </div>
 
+            {/* RAG Mode Toggle */}
+            <div className="mb-6 flex items-center justify-end">
+              <button
+                onClick={() => setRagEnabled(!ragEnabled)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 ${
+                  ragEnabled 
+                    ? 'bg-gradient-to-r from-purple-600 to-pink-600 text-white shadow-lg shadow-purple-500/25' 
+                    : 'bg-slate-800 text-gray-400 hover:bg-slate-700 hover:text-white border border-slate-700'
+                }`}
+              >
+                <Sparkles className={`w-4 h-4 ${ragEnabled ? 'animate-pulse' : ''}`} />
+                <span>AI Summary</span>
+                <span className={`text-xs px-2 py-0.5 rounded ${ragEnabled ? 'bg-white/20' : 'bg-slate-700'}`}>
+                  {ragEnabled ? 'ON' : 'OFF'}
+                </span>
+              </button>
+            </div>
+
             {/* Query Editor - Shown after parsing */}
             {structuredQuery && (
               <div className="mb-8">
@@ -228,6 +309,36 @@ export default function Home() {
             {/* Results */}
             {!loading && results && (
               <div>
+                {/* AI Summary (RAG) */}
+                {ragEnabled && (
+                  <div className="mb-6">
+                    {loadingRag ? (
+                      <div className="p-5 bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-xl border border-purple-500/50 shadow-xl">
+                        <div className="flex items-center gap-3">
+                          <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
+                          <p className="text-purple-300 font-medium">Generating AI summary...</p>
+                        </div>
+                      </div>
+                    ) : aiSummary ? (
+                      <div className="p-5 bg-gradient-to-r from-purple-900/50 to-pink-900/50 rounded-xl border border-purple-500/50 shadow-xl">
+                        <div className="flex items-start gap-4">
+                          <div className="p-2.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-lg flex-shrink-0">
+                            <Sparkles className="w-5 h-5 text-white" />
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-bold text-base mb-2 text-white flex items-center gap-2">
+                              AI-Powered Results
+                              <span className="text-xs px-2 py-0.5 bg-purple-500/30 text-purple-300 rounded">RAG</span>
+                              <span className="text-xs px-2 py-0.5 bg-pink-500/30 text-pink-300 rounded">Re-ranked</span>
+                            </p>
+                            <p className="text-gray-200 leading-relaxed">{aiSummary}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+
                 {/* Query Understanding Card */}
                 <div className="mb-6 space-y-4">
                   {/* Translation Info */}

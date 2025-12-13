@@ -6,6 +6,8 @@ interface Language {
   code: string
   name: string
   nativeName: string
+  tier?: 'supported' | 'auto'
+  note?: string
 }
 
 interface LanguageSelectorProps {
@@ -15,16 +17,27 @@ interface LanguageSelectorProps {
 }
 
 const SUPPORTED_LANGUAGES: Language[] = [
-  { code: 'en', name: 'English', nativeName: 'English' },
-  { code: 'hi', name: 'Hindi', nativeName: 'हिंदी' },
-  { code: 'mr', name: 'Marathi', nativeName: 'मराठी' },
-  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
-  { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
-  { code: 'bn', name: 'Bengali', nativeName: 'বাংলা' },
-  { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી' },
-  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ' },
-  { code: 'ml', name: 'Malayalam', nativeName: 'മലയാളം' },
-  { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ' }
+  // Default option - Auto-detect
+  { 
+    code: 'auto', 
+    name: 'Auto-Detect', 
+    nativeName: '🌐 Auto-Detect (Recommended)',
+    tier: 'auto',
+    note: 'Automatically detects your language'
+  },
+  
+  // Fully supported languages (high accuracy)
+  { code: 'en', name: 'English', nativeName: 'English', tier: 'supported' },
+  { code: 'hi', name: 'Hindi', nativeName: 'हिंदी', tier: 'supported' },
+  { code: 'mr', name: 'Marathi', nativeName: 'मराठी', tier: 'supported' },
+  { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', tier: 'supported' },
+  { code: 'ur', name: 'Urdu', nativeName: 'اردو', tier: 'supported' },
+  { code: 'te', name: 'Telugu', nativeName: 'తెలుగు', tier: 'supported' },
+  { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', tier: 'supported' },
+  { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', tier: 'supported' },
+  { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ', tier: 'supported' },
+  { code: 'ml', name: 'Malayalam', nativeName: 'മലയാളം', tier: 'supported' },
+  { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ', tier: 'supported' }
 ]
 
 export default function LanguageSelector({ value, onChange, disabled = false }: LanguageSelectorProps) {
@@ -52,24 +65,24 @@ export default function LanguageSelector({ value, onChange, disabled = false }: 
             ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-slate-500'}
           `}
         >
-          <option value="" disabled>Select language...</option>
           {SUPPORTED_LANGUAGES.map((lang) => (
             <option key={lang.code} value={lang.code}>
-              {lang.nativeName} ({lang.name})
+              {lang.nativeName}
+              {lang.tier === 'supported' ? ` (${lang.name})` : ''}
             </option>
           ))}
         </select>
       </div>
       
-      {/* Helper text */}
-      {!value && (
-        <p className="mt-1.5 text-xs text-yellow-400 flex items-center gap-1">
-          <span>⚠️</span>
-          <span>Required for accurate transcription</span>
+      {/* Helper text based on selection */}
+      {value === 'auto' && (
+        <p className="mt-1.5 text-xs text-blue-400 flex items-center gap-1">
+          <span>🌐</span>
+          <span>Will automatically detect your language</span>
         </p>
       )}
       
-      {value && selectedLanguage && (
+      {value && value !== 'auto' && selectedLanguage && (
         <p className="mt-1.5 text-xs text-green-400 flex items-center gap-1">
           <span>✓</span>
           <span>Recording in {selectedLanguage.nativeName}</span>

@@ -24,6 +24,7 @@ from app.api.search_client import SearchClient
 from app.api.enhanced_query_parser import enhanced_parser
 from app.api.llm_service import llm_service
 from app.api.whisper_service import whisper_service
+from app.api.query_enhancer import query_enhancer
 
 app = FastAPI(
     title="Food Intelligence API",
@@ -181,9 +182,13 @@ async def get_search_client():
         client = SearchClient()
         print("✅ Typesense search client ready!")
         
-        # Load database vocabulary into Whisper service
-        print("📚 Loading recipe vocabulary into Whisper...")
-        whisper_service.load_database_vocabulary(client)
+        # Load database vocabulary into Whisper service (optional)
+        try:
+            if hasattr(whisper_service, 'load_database_vocabulary'):
+                print("📚 Loading recipe vocabulary into Whisper...")
+                whisper_service.load_database_vocabulary(client)
+        except Exception as e:
+            print(f"⚠️ Could not load Whisper vocabulary: {e}")
     
     return client
 
@@ -475,6 +480,34 @@ async def search_recipes(
             # Keep required as original list - do NOT expand (same logic as structured mode)
             required_ingredients = parsed.get('required_ingredients', [])
         
+        # QUERY ENHANCEMENT: Apply rule-based intelligence
+        # Detects concepts like "healthy", "low-carb", "quick", "persian style", etc.
+        enhancement = query_enhancer.enhance_query(
+            query=q,
+            existing_exclusions=excluded_ingredients,
+            existing_filters=filters
+        )
+        
+        # Apply enhancements
+        if enhancement.additional_exclusions:
+            excluded_ingredients = list(set(excluded_ingredients + enhancement.additional_exclusions))
+            print(f"  🧠 Enhanced exclusions: +{len(enhancement.additional_exclusions)} items")
+        
+        if enhancement.filters:
+            for key, value in enhancement.filters.items():
+                if key not in filters:
+                    filters[key] = value
+                    print(f"  🧠 Enhanced filter: {key}={value}")
+        
+        if enhancement.reasoning:
+            print(f"  📋 Enhancement reasoning:")
+            for reason in enhancement.reasoning[:3]:  # Limit output
+                print(f"     {reason}")
+        
+        # Store enhancement info for response
+        enhancement_applied = len(enhancement.reasoning) > 0
+        enhancement_reasoning = enhancement.reasoning if enhancement_applied else None
+        
         # CLEAN GENERIC TERMS: Remove "sabzi", "vegetable", "curry" etc.
         # These are too broad and confuse semantic search
         original_query = search_query
@@ -570,7 +603,10 @@ async def search_recipes(
             "excluded_count": excluded_count if excluded_count > 0 else None,
             "fallback_message": None,
             "is_fallback": False,
-            "duration_ms": round(duration, 2)
+            "duration_ms": round(duration, 2),
+            # Query enhancement info
+            "enhancement_applied": enhancement_applied if 'enhancement_applied' in dir() else None,
+            "enhancement_reasoning": enhancement_reasoning if 'enhancement_reasoning' in dir() else None
         }
     except Exception as e:
         print(f"❌ Search error: {str(e)}")
@@ -595,6 +631,224 @@ async def autocomplete_query(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Autocomplete failed: {str(e)}")
+
+
+@app.post("/api/rag-summary")
+async def generate_rag_summary(
+    query: str = Query(..., description="Original search query"),
+    recipe_names: str = Query(..., description="Comma-separated recipe names")
+):
+    """
+    Generate AI summary for retrieved recipes (RAG)
+    
+    - **query**: Original user search query
+    - **recipe_names**: Comma-separated list of recipe names to summarize
+    
+    Returns conversational AI summary about the recipes.
+    """
+    try:
+        start = time.time()
+        
+        # Parse recipe names
+        names = [n.strip() for n in recipe_names.split(",") if n.strip()]
+        if not names:
+            raise HTTPException(status_code=400, detail="No recipe names provided")
+        
+        # Get search client to fetch full recipe details
+        search_client = await get_search_client()
+        
+        # Fetch recipe details for each name
+        recipes = []
+        for name in names[:5]:  # Limit to 5 recipes
+            results = search_client.search(name, limit=1)
+            if results and results.get('hits'):
+                recipes.append({"document": results['hits'][0]["document"]})
+        
+        if not recipes:
+            return {
+                "summary": None,
+                "error": "Could not find recipe details",
+                "duration_ms": round((time.time() - start) * 1000, 2)
+            }
+        
+        # Generate RAG summary using LLM
+        summary = await llm_service.generate_recipe_summary(query, recipes)
+        
+        duration = (time.time() - start) * 1000
+        print(f"🤖 RAG Summary generated in {duration:.2f}ms")
+        
+        return {
+            "summary": summary,
+            "recipe_count": len(recipes),
+            "duration_ms": round(duration, 2)
+        }
+        
+    except Exception as e:
+        print(f"❌ RAG summary error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"RAG summary failed: {str(e)}")
+
+
+@app.get("/api/rag-search")
+async def rag_search(
+    q: str = Query(..., description="Search query"),
+    limit: int = Query(20, ge=1, le=100, description="Results per page"),
+    page: int = Query(1, ge=1, description="Page number"),
+    cuisine: Optional[str] = Query(None, description="Filter by cuisine"),
+    diet: Optional[str] = Query(None, description="Filter by diet"),
+    course: Optional[str] = Query(None, description="Filter by course"),
+    base_query: Optional[str] = Query(None, description="Structured base query"),
+    include_ingredients: Optional[str] = Query(None, description="Ingredients to include"),
+    exclude_ingredients: Optional[str] = Query(None, description="Ingredients to exclude"),
+    tags: Optional[str] = Query(None, description="Tags/modifiers")
+):
+    """
+    RAG-Enhanced Search: Search + LLM Re-ranking + AI Summary
+    
+    This endpoint performs:
+    1. Regular Typesense search (same as /api/search)
+    2. LLM re-ranks results based on query intent
+    3. Generates AI summary of top results
+    
+    Use this when user enables "AI Mode" for smarter, intent-aware results.
+    """
+    try:
+        start = time.time()
+        
+        print(f"\n🤖 RAG Search: '{q}'")
+        
+        # Step 1: Perform regular search (reuse existing logic)
+        # Build params for internal search
+        use_structured = base_query is not None or include_ingredients or exclude_ingredients or tags
+        
+        if use_structured:
+            print(f"   📦 Using structured query")
+            search_query = base_query or "*"
+            translated_query = base_query or ""
+            excluded_ingredients_list = [x.strip() for x in (exclude_ingredients or "").split(",") if x.strip()]
+            required_ingredients_list = [x.strip() for x in (include_ingredients or "").split(",") if x.strip()]
+            parsed_tags = [x.strip() for x in (tags or "").split(",") if x.strip()]
+            parsed = {'dish_name': base_query or '', 'excluded_ingredients': excluded_ingredients_list}
+        else:
+            # Translate and parse query
+            translated_query = await enhanced_parser.translate_to_english(q)
+            parsed = await enhanced_parser.parse_query(translated_query)
+            excluded_ingredients_list = parsed.get('excluded_ingredients', [])
+            required_ingredients_list = parsed.get('required_ingredients', [])
+            parsed_tags = parsed.get('tags', [])
+            
+            dish_name = parsed.get('dish_name', '')
+            if dish_name and excluded_ingredients_list:
+                search_query = dish_name
+            else:
+                search_query = translated_query
+        
+        # Build filters
+        filters = {}
+        if cuisine and cuisine != "All":
+            filters['cuisine'] = cuisine
+        if diet and diet != "All":
+            filters['diet'] = diet
+        if course and course != "All":
+            filters['course'] = course
+        
+        # Map tags to filters
+        if parsed_tags:
+            tag_filters = map_tags_to_filters(parsed_tags)
+            if not filters.get('cuisine') and tag_filters.get('cuisine'):
+                filters['cuisine'] = tag_filters['cuisine']
+            if not filters.get('diet') and tag_filters.get('diet'):
+                filters['diet'] = tag_filters['diet']
+            if not filters.get('course') and tag_filters.get('course'):
+                filters['course'] = tag_filters['course']
+        
+        # Get search client
+        search_client = await get_search_client()
+        
+        # Expand exclusions
+        if use_structured:
+            excluded_ingredients = enhanced_parser._expand_ingredient_aliases(excluded_ingredients_list) if excluded_ingredients_list else []
+            required_ingredients = required_ingredients_list
+        else:
+            excluded_ingredients = parsed.get('excluded_ingredients', [])
+            required_ingredients = parsed.get('required_ingredients', [])
+        
+        # Clean generic terms
+        original_query = search_query
+        search_query = clean_generic_terms(search_query)
+        if not search_query and (filters or excluded_ingredients):
+            search_query = "*"
+        
+        # Step 2: Search with more results for re-ranking
+        search_limit = min(limit * 2, 50)  # Get more results for re-ranking
+        
+        search_response = search_client.search(
+            query=search_query,
+            filters=filters,
+            limit=search_limit,
+            page=1  # Always start from page 1 for re-ranking
+        )
+        
+        # Extract hits from search response
+        search_results = search_response.get('hits', []) if search_response else []
+        
+        if not search_results:
+            return {
+                "hits": [],
+                "found": 0,
+                "page": page,
+                "limit": limit,
+                "total_pages": 0,
+                "query": q,
+                "rag_enabled": True,
+                "ai_summary": None,
+                "duration_ms": round((time.time() - start) * 1000, 2)
+            }
+        
+        # Apply ingredient filtering
+        if excluded_ingredients or required_ingredients:
+            search_results = search_client._filter_by_ingredients(
+                search_results, 
+                excluded_ingredients, 
+                required_ingredients
+            )
+        
+        # Step 3: LLM Re-ranking
+        print(f"   🎯 Re-ranking {len(search_results)} results...")
+        reranked_results = await llm_service.rerank_recipes(q, search_results, max_to_rerank=20)
+        
+        # Paginate re-ranked results
+        total_found = len(reranked_results)
+        start_idx = (page - 1) * limit
+        end_idx = start_idx + limit
+        page_results = reranked_results[start_idx:end_idx]
+        total_pages = (total_found + limit - 1) // limit
+        
+        # Step 4: Generate AI Summary (for first page only)
+        ai_summary = None
+        if page == 1 and page_results:
+            ai_summary = await llm_service.generate_recipe_summary(q, page_results[:5])
+        
+        duration = (time.time() - start) * 1000
+        print(f"✅ RAG Search complete in {duration:.2f}ms")
+        
+        return {
+            "hits": page_results,
+            "found": total_found,
+            "page": page,
+            "limit": limit,
+            "total_pages": total_pages,
+            "query": q,
+            "translated_query": translated_query if translated_query != q else None,
+            "detected_language": parsed.get('language_detected'),
+            "rag_enabled": True,
+            "ai_summary": ai_summary,
+            "duration_ms": round(duration, 2)
+        }
+        
+    except Exception as e:
+        print(f"❌ RAG Search error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"RAG search failed: {str(e)}")
+
 
 @app.get("/api/ingredient")
 async def lookup_ingredient(

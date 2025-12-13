@@ -48,7 +48,10 @@ SCHEMA = {
 }
 
 class SearchClient:
-    def __init__(self, use_external_embeddings: bool = True):
+    def __init__(self, use_external_embeddings: bool = False):
+        # NOTE: External embeddings disabled by default to avoid 10GB model download on startup
+        # Text-only search still works. RAG re-ranking uses LLM instead of embeddings.
+        # Set to True if you have the model pre-cached and need hybrid semantic search.
         self.client = typesense.Client({
             'nodes': [{
                 'host': TYPESENSE_HOST,

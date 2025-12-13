@@ -1,0 +1,334 @@
+{
+  "health_concepts": {
+    "healthy": {
+      "description": "Exclude fried/heavy foods, prefer grilled/steamed",
+      "patterns": [
+        "\\bhealthy\\b",
+        "\\bnutritious\\b",
+        "\\bwholesome\\b",
+        "\\blight\\b.*\\brecipe",
+        "\\bclean eating\\b"
+      ],
+      "exclude_ingredients": [
+        "deep fried",
+        "fried",
+        "cream",
+        "butter",
+        "ghee",
+        "oil",
+        "mayonnaise"
+      ],
+      "prefer_ingredients": [
+        "grilled",
+        "steamed",
+        "baked",
+        "roasted"
+      ],
+      "filters": {}
+    },
+    "low_carb": {
+      "description": "Exclude rice, bread, potatoes, sugar",
+      "patterns": [
+        "\\blow\\s*carb\\b",
+        "\\blow\\s*carbohydrate\\b",
+        "\\bketo\\b",
+        "\\batkins\\b"
+      ],
+      "exclude_ingredients": [
+        "rice",
+        "bread",
+        "roti",
+        "naan",
+        "paratha",
+        "potato",
+        "potatoes",
+        "aloo",
+        "pasta",
+        "noodles",
+        "sugar",
+        "corn",
+        "maize"
+      ],
+      "prefer_ingredients": [
+        "paneer",
+        "chicken",
+        "fish",
+        "egg",
+        "cauliflower",
+        "broccoli",
+        "spinach"
+      ],
+      "filters": {}
+    },
+    "low_fat": {
+      "description": "Exclude oil, ghee, butter, cream",
+      "patterns": [
+        "\\blow\\s*fat\\b",
+        "\\bfat\\s*free\\b",
+        "\\blean\\b.*\\bprotein"
+      ],
+      "exclude_ingredients": [
+        "oil",
+        "ghee",
+        "butter",
+        "cream",
+        "coconut milk",
+        "fried"
+      ],
+      "prefer_ingredients": [
+        "grilled",
+        "steamed",
+        "boiled"
+      ],
+      "filters": {}
+    },
+    "vegan": {
+      "description": "Exclude all animal products",
+      "patterns": [
+        "\\bvegan\\b",
+        "\\bplant\\s*based\\b"
+      ],
+      "exclude_ingredients": [
+        "milk",
+        "cream",
+        "butter",
+        "ghee",
+        "paneer",
+        "cheese",
+        "egg",
+        "chicken",
+        "mutton",
+        "fish",
+        "meat",
+        "yogurt",
+        "curd",
+        "dahi"
+      ],
+      "prefer_ingredients": [
+        "tofu",
+        "vegetables",
+        "lentils",
+        "dal"
+      ],
+      "filters": {
+        "diet": "Vegan"
+      }
+    },
+    "vegetarian": {
+      "description": "Exclude meat, fish, eggs",
+      "patterns": [
+        "\\bvegetarian\\b",
+        "\\bveggie\\b"
+      ],
+      "exclude_ingredients": [
+        "chicken",
+        "mutton",
+        "fish",
+        "meat",
+        "egg",
+        "prawn",
+        "seafood"
+      ],
+      "prefer_ingredients": [],
+      "filters": {
+        "diet": "Vegetarian"
+      }
+    },
+    "gluten_free": {
+      "description": "Exclude wheat, flour, bread",
+      "patterns": [
+        "\\bgluten\\s*free\\b",
+        "\\bno\\s*gluten\\b"
+      ],
+      "exclude_ingredients": [
+        "wheat",
+        "flour",
+        "maida",
+        "atta",
+        "bread",
+        "roti",
+        "naan",
+        "paratha",
+        "pasta"
+      ],
+      "prefer_ingredients": [
+        "rice",
+        "quinoa"
+      ],
+      "filters": {}
+    }
+  },
+  "style_modifiers": {
+    "persian": {
+      "description": "Persian/Iranian cuisine style",
+      "patterns": [
+        "\\bpersian\\b",
+        "\\biranian\\b",
+        "\\biran\\b.*\\bstyle"
+      ],
+      "filters": {
+        "cuisine": "Iranian"
+      },
+      "boost_terms": [
+        "saffron",
+        "pomegranate",
+        "barberry",
+        "rose water",
+        "tahdig",
+        "kebab"
+      ]
+    },
+    "authentic": {
+      "description": "Traditional/authentic preparation",
+      "patterns": [
+        "\\bauthentic\\b",
+        "\\btraditional\\b",
+        "\\boriginal\\b.*\\brecipe"
+      ],
+      "filters": {},
+      "boost_terms": []
+    },
+    "restaurant_style": {
+      "description": "Restaurant-style preparation",
+      "patterns": [
+        "\\brestaurant\\b.*\\bstyle",
+        "\\bdhaba\\b.*\\bstyle"
+      ],
+      "filters": {},
+      "boost_terms": [
+        "rich",
+        "creamy",
+        "butter"
+      ]
+    },
+    "home_style": {
+      "description": "Home-style cooking",
+      "patterns": [
+        "\\bhome\\b.*\\bstyle",
+        "\\bhomemade\\b",
+        "\\bghar\\s*ka\\b"
+      ],
+      "filters": {},
+      "boost_terms": [
+        "simple",
+        "easy"
+      ]
+    },
+    "street_food": {
+      "description": "Street food style",
+      "patterns": [
+        "\\bstreet\\s*food\\b",
+        "\\bchaat\\b"
+      ],
+      "filters": {
+        "course": "Snack"
+      },
+      "boost_terms": [
+        "spicy",
+        "tangy"
+      ]
+    }
+  },
+  "time_concepts": {
+    "quick": {
+      "description": "Under 20 minutes",
+      "patterns": [
+        "\\bquick\\b",
+        "\\bfast\\b",
+        "\\brapid\\b"
+      ],
+      "max_time_minutes": 20
+    },
+    "instant": {
+      "description": "Under 10 minutes",
+      "patterns": [
+        "\\binstant\\b",
+        "\\bimmediate\\b",
+        "\\b5\\s*min",
+        "\\b10\\s*min"
+      ],
+      "max_time_minutes": 10
+    },
+    "easy": {
+      "description": "Under 30 minutes",
+      "patterns": [
+        "\\beasy\\b",
+        "\\bsimple\\b"
+      ],
+      "max_time_minutes": 30
+    }
+  },
+  "preparation_methods": {
+    "grilled": {
+      "description": "Grilled/tandoori preparation",
+      "patterns": [
+        "\\bgrilled\\b",
+        "\\btandoori\\b",
+        "\\bbarbecue\\b",
+        "\\bbbq\\b"
+      ],
+      "boost_terms": [
+        "tikka",
+        "kebab",
+        "tandoor"
+      ],
+      "exclude_ingredients": [
+        "deep fried",
+        "fried"
+      ]
+    },
+    "baked": {
+      "description": "Oven-baked preparation",
+      "patterns": [
+        "\\bbaked\\b",
+        "\\boven\\b.*\\broasted"
+      ],
+      "boost_terms": [
+        "oven",
+        "roasted"
+      ],
+      "exclude_ingredients": [
+        "fried"
+      ]
+    },
+    "steamed": {
+      "description": "Steamed preparation",
+      "patterns": [
+        "\\bsteamed\\b"
+      ],
+      "boost_terms": [
+        "idli",
+        "dhokla",
+        "momos"
+      ],
+      "exclude_ingredients": [
+        "fried",
+        "oil"
+      ]
+    },
+    "fried": {
+      "description": "Fried/deep-fried preparation",
+      "patterns": [
+        "\\bfried\\b",
+        "\\bdeep\\s*fried\\b"
+      ],
+      "boost_terms": [
+        "crispy",
+        "crunchy"
+      ],
+      "exclude_ingredients": []
+    },
+    "curry": {
+      "description": "Curry-based dish",
+      "patterns": [
+        "\\bcurry\\b",
+        "\\bgravy\\b"
+      ],
+      "boost_terms": [
+        "masala",
+        "sauce"
+      ],
+      "exclude_ingredients": []
+    }
+  }
+}

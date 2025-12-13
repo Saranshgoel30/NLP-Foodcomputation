@@ -545,6 +545,201 @@ Return JSON following the format specified in the system prompt.
         }
     
     # =========================================================================
+    # RAG: RECIPE SUMMARY GENERATION
+    # =========================================================================
+    
+    async def generate_recipe_summary(
+        self, 
+        query: str, 
+        recipes: List[Dict[str, Any]],
+        max_recipes: int = 5
+    ) -> Optional[str]:
+        """
+        Generate a conversational AI summary about retrieved recipes (RAG)
+        
+        Args:
+            query: Original user query
+            recipes: List of retrieved recipe documents
+            max_recipes: Maximum recipes to include in context (default 5)
+        
+        Returns:
+            Natural language summary about the recipes, or None if failed
+        """
+        if not self.primary_provider or not recipes:
+            return None
+        
+        # Build recipe context (limit to top N for token efficiency)
+        recipe_context = []
+        for i, recipe in enumerate(recipes[:max_recipes]):
+            doc = recipe.get('document', recipe)
+            recipe_info = f"""
+Recipe {i+1}: {doc.get('name', 'Unknown')}
+- Cuisine: {doc.get('cuisine', 'N/A')}
+- Diet: {doc.get('diet', 'N/A')}
+- Course: {doc.get('course', 'N/A')}
+- Time: {doc.get('total_time', 'N/A')} mins
+- Ingredients: {', '.join(doc.get('ingredients', [])[:10])}
+"""
+            recipe_context.append(recipe_info)
+        
+        context_text = "\n".join(recipe_context)
+        total_found = len(recipes)
+        
+        user_prompt = f"""User searched for: "{query}"
+
+I found {total_found} recipes. Here are the top {min(max_recipes, total_found)}:
+
+{context_text}
+
+Please provide a helpful, conversational summary (2-4 sentences) that:
+1. Acknowledges what the user was looking for
+2. Highlights 2-3 of the best matching recipes with quick reasons why
+3. Mentions any useful patterns (e.g., "most are quick to make" or "several vegetarian options")
+
+Keep it natural and friendly, like a knowledgeable chef recommending dishes.
+Do NOT use markdown formatting or bullet points. Just flowing text."""
+
+        messages = [
+            {"role": "system", "content": "You are a friendly culinary assistant helping users discover recipes. Be concise, warm, and helpful. Respond in plain text without markdown."},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        try:
+            response = await self._call_llm(messages, temperature=0.7, max_tokens=300)
+            if response:
+                # Clean up response
+                summary = response.strip()
+                
+                # Handle case where LLM returns JSON object
+                if summary.startswith('{'):
+                    try:
+                        import json
+                        parsed = json.loads(summary)
+                        if isinstance(parsed, dict) and 'summary' in parsed:
+                            summary = parsed['summary']
+                    except:
+                        pass
+                
+                # Remove any markdown artifacts
+                summary = summary.replace('**', '').replace('*', '')
+                return summary
+        except Exception as e:
+            print(f"   ⚠️  RAG summary generation failed: {e}")
+        
+        return None
+    
+    async def rerank_recipes(
+        self,
+        query: str,
+        recipes: List[Dict[str, Any]],
+        max_to_rerank: int = 20
+    ) -> List[Dict[str, Any]]:
+        """
+        RAG Re-ranking: Use LLM to re-order recipes based on query relevance
+        
+        Args:
+            query: Original user query (with full intent)
+            recipes: List of retrieved recipe documents from Typesense
+            max_to_rerank: Maximum recipes to consider for re-ranking
+        
+        Returns:
+            Re-ordered list of recipes with relevance scores
+        """
+        if not self.primary_provider or not recipes:
+            return recipes
+        
+        # Limit recipes to re-rank
+        recipes_to_rank = recipes[:max_to_rerank]
+        
+        # Build compact recipe list for LLM
+        recipe_list = []
+        for i, recipe in enumerate(recipes_to_rank):
+            doc = recipe.get('document', recipe)
+            recipe_list.append({
+                "id": i,
+                "name": doc.get('name', 'Unknown'),
+                "cuisine": doc.get('cuisine', 'N/A'),
+                "diet": doc.get('diet', 'N/A'),
+                "course": doc.get('course', 'N/A'),
+                "time": doc.get('total_time', 0),
+                "ingredients": doc.get('ingredients', [])[:8]  # First 8 ingredients
+            })
+        
+        recipe_json = json.dumps(recipe_list, indent=2)
+        
+        user_prompt = f"""User query: "{query}"
+
+Here are {len(recipe_list)} recipes retrieved from search:
+
+{recipe_json}
+
+TASK: Re-rank these recipes by how well they match the user's INTENT.
+
+Consider:
+1. Does the recipe match what the user is looking for?
+2. If user mentioned dietary restrictions, do the ingredients comply?
+3. If user mentioned time constraints, does cooking time fit?
+4. How relevant is the cuisine/course to the query?
+
+Return a JSON array of recipe IDs in order of relevance (most relevant first).
+Include a brief reason for each ranking.
+
+Format:
+{{
+  "ranking": [
+    {{"id": 0, "score": 95, "reason": "Perfect match - exactly what user asked for"}},
+    {{"id": 3, "score": 85, "reason": "Good alternative with similar flavors"}},
+    ...
+  ]
+}}
+
+Return ONLY valid JSON."""
+
+        messages = [
+            {"role": "system", "content": "You are a recipe relevance expert. Analyze user intent and re-rank recipes by relevance. Return only valid JSON."},
+            {"role": "user", "content": user_prompt}
+        ]
+        
+        try:
+            response = await self._call_llm(messages, temperature=0.1, max_tokens=1000)
+            
+            if response:
+                result = self._parse_json_response(response)
+                ranking = result.get('ranking', [])
+                
+                if ranking:
+                    # Re-order recipes based on LLM ranking
+                    reranked = []
+                    seen_ids = set()
+                    
+                    for item in ranking:
+                        recipe_id = item.get('id')
+                        if recipe_id is not None and recipe_id < len(recipes_to_rank) and recipe_id not in seen_ids:
+                            recipe = recipes_to_rank[recipe_id].copy()
+                            # Add relevance metadata
+                            recipe['_rag_score'] = item.get('score', 0)
+                            recipe['_rag_reason'] = item.get('reason', '')
+                            reranked.append(recipe)
+                            seen_ids.add(recipe_id)
+                    
+                    # Add any recipes that weren't ranked (shouldn't happen but safety)
+                    for i, recipe in enumerate(recipes_to_rank):
+                        if i not in seen_ids:
+                            reranked.append(recipe)
+                    
+                    # Add remaining recipes beyond max_to_rerank
+                    reranked.extend(recipes[max_to_rerank:])
+                    
+                    print(f"   🎯 RAG Re-ranked {len(ranking)} recipes")
+                    return reranked
+                    
+        except Exception as e:
+            print(f"   ⚠️  RAG re-ranking failed: {e}")
+        
+        # Return original order on failure
+        return recipes
+    
+    # =========================================================================
     # UTILITY METHODS
     # =========================================================================
     
