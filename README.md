@@ -121,6 +121,13 @@ All data is indexed with **768-dimensional semantic embeddings** using the `para
 - **Smart Caching**: Reduced costs with intelligent cache system
 - **Beautiful UI**: One-click recording with visual feedback
 
+### 🤖 **RAG-Powered AI Summary** (NEW!)
+- **Retrieval-Augmented Generation**: Combines search with LLM intelligence
+- **Intent-Aware Re-ranking**: LLM reorders results by true relevance to your query
+- **AI Summaries**: Conversational recommendations explaining why recipes match
+- **Smart Caching**: 1-hour TTL reduces costs by ~50% on repeat queries
+- **Toggle On/Off**: Enable via "AI Summary" switch in the UI
+
 ### 🧠 **LLM-Powered Intelligence**
 - **Smart Query Understanding**: DeepSeek AI + xAI Grok for intelligent interpretation
 - **Context-Aware Translation**: Understands food terminology in multiple languages
@@ -334,6 +341,136 @@ Open http://localhost:3000 and try:
 - Stable and reliable
 
 **Cost Tracking**: Visit `/api/stats` to monitor usage in real-time
+
+---
+
+## 🤖 RAG (Retrieval-Augmented Generation) Mode
+
+### What is RAG?
+
+RAG combines traditional search with AI intelligence to provide smarter, more relevant results. When you enable "AI Summary" mode, the system:
+
+1. **Retrieves** recipes using Typesense semantic search
+2. **Augments** the results by sending them to an LLM for analysis
+3. **Generates** a re-ranked list + conversational summary
+
+### How It Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     RAG SEARCH PIPELINE                          │
+└─────────────────────────────────────────────────────────────────┘
+
+User Query: "healthy breakfast without eggs"
+            │
+            ▼
+┌───────────────────────────────────────┐
+│  STEP 1: RETRIEVAL (Typesense)        │
+│  - Semantic search with embeddings    │
+│  - Returns top 40 matching recipes    │
+│  - ~50ms                              │
+└───────────────────────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────┐
+│  STEP 2: RE-RANKING (LLM)             │
+│  - LLM analyzes query intent          │
+│  - Scores each recipe for relevance   │
+│  - Re-orders by true match quality    │
+│  - ~800ms (cached: ~0ms)              │
+└───────────────────────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────┐
+│  STEP 3: GENERATION (LLM)             │
+│  - Creates conversational summary     │
+│  - Highlights best matches            │
+│  - Explains why recipes fit           │
+│  - ~500ms (cached: ~0ms)              │
+└───────────────────────────────────────┘
+            │
+            ▼
+┌───────────────────────────────────────┐
+│  FINAL OUTPUT                         │
+│  - Re-ranked recipe list              │
+│  - AI-generated summary               │
+│  - Relevance scores per recipe        │
+└───────────────────────────────────────┘
+```
+
+### RAG vs Regular Search
+
+| Feature | Regular Search | RAG Search |
+|---------|----------------|------------|
+| Speed | ~70ms | ~1.5s (first), ~70ms (cached) |
+| Ranking | Typesense score only | LLM intent-aware ranking |
+| Summary | None | AI conversational summary |
+| Cost | Free | ~$0.001 per query |
+| Best For | Quick browsing | Intent-specific queries |
+
+### When RAG Helps Most
+
+✅ **Complex intent queries**: "healthy vegetarian dinner for weight loss"
+✅ **Dietary constraints**: "keto recipes without dairy"  
+✅ **Preference matching**: "quick Indian breakfast for kids"
+✅ **Nuanced requests**: "comfort food that's actually healthy"
+
+### Intelligent Caching
+
+RAG results are cached for 1 hour to optimize performance and costs:
+
+```
+First search: "paneer recipes"
+├── Typesense search: 50ms
+├── LLM re-ranking: 800ms
+├── LLM summary: 500ms
+└── Total: ~1.35s
+
+Repeat search: "paneer recipes" (within 1 hour)
+├── Typesense search: 50ms
+├── Cache hit (rerank): 0ms ✨
+├── Cache hit (summary): 0ms ✨
+└── Total: ~50ms
+```
+
+**Cache Key Formula**: `query + recipe_ids`
+- Same query, same results = cache hit
+- Same query, different results = fresh LLM call
+- Different query = fresh LLM call
+
+### API Endpoints
+
+**RAG Search**: `GET /api/rag-search`
+```bash
+curl "http://localhost:8000/api/rag-search?q=healthy+breakfast&limit=20"
+```
+
+**Response includes:**
+```json
+{
+  "hits": [...],           // Re-ranked recipes
+  "found": 45,
+  "rag_enabled": true,
+  "ai_summary": "Looking for healthy breakfast options? I found 45 great choices! The Oats Upma stands out for its high fiber and quick prep time..."
+}
+```
+
+**RAG Summary Only**: `POST /api/rag-summary`
+```bash
+curl -X POST "http://localhost:8000/api/rag-summary" \
+  -H "Content-Type: application/json" \
+  -d '{"query": "paneer", "recipes": [...]}'
+```
+
+### Cost Efficiency
+
+| Operation | Cost per Call | With 50% Cache Hit |
+|-----------|--------------|-------------------|
+| Re-ranking | ~$0.0005 | ~$0.00025 |
+| Summary | ~$0.0003 | ~$0.00015 |
+| **Total per RAG search** | ~$0.0008 | ~$0.0004 |
+
+Monthly estimate (1000 RAG searches): **~$0.40**
 
 ---
 

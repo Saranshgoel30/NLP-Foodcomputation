@@ -568,6 +568,17 @@ Return JSON following the format specified in the system prompt.
         if not self.primary_provider or not recipes:
             return None
         
+        # Build cache key from query + recipe IDs (stable identifier)
+        recipe_ids = [str(r.get('document', r).get('id', i)) for i, r in enumerate(recipes[:max_recipes])]
+        cache_input = f"{query}:{'|'.join(recipe_ids)}"
+        cache_key = self._get_cache_key(cache_input, "rag_summary")
+        
+        # Check cache first
+        cached = self._get_cached(cache_key)
+        if cached:
+            print(f"   💾 RAG Summary cache hit")
+            return cached
+        
         # Build recipe context (limit to top N for token efficiency)
         recipe_context = []
         for i, recipe in enumerate(recipes[:max_recipes]):
@@ -622,6 +633,11 @@ Do NOT use markdown formatting or bullet points. Just flowing text."""
                 
                 # Remove any markdown artifacts
                 summary = summary.replace('**', '').replace('*', '')
+                
+                # Cache the summary
+                self._set_cache(cache_key, summary)
+                print(f"   💾 RAG Summary cached")
+                
                 return summary
         except Exception as e:
             print(f"   ⚠️  RAG summary generation failed: {e}")
@@ -650,6 +666,32 @@ Do NOT use markdown formatting or bullet points. Just flowing text."""
         
         # Limit recipes to re-rank
         recipes_to_rank = recipes[:max_to_rerank]
+        
+        # Build cache key from query + recipe IDs
+        recipe_ids = [str(r.get('document', r).get('id', i)) for i, r in enumerate(recipes_to_rank)]
+        cache_input = f"{query}:{'|'.join(recipe_ids)}"
+        cache_key = self._get_cache_key(cache_input, "rag_rerank")
+        
+        # Check cache first - return cached reranked order
+        cached_ranking = self._get_cached(cache_key)
+        if cached_ranking:
+            print(f"   💾 RAG Rerank cache hit")
+            # Apply cached ranking to current recipes
+            try:
+                reranked = []
+                seen_ids = set()
+                for idx in cached_ranking:
+                    if idx < len(recipes_to_rank) and idx not in seen_ids:
+                        reranked.append(recipes_to_rank[idx])
+                        seen_ids.add(idx)
+                # Add any unranked recipes
+                for i, recipe in enumerate(recipes_to_rank):
+                    if i not in seen_ids:
+                        reranked.append(recipe)
+                reranked.extend(recipes[max_to_rerank:])
+                return reranked
+            except Exception as e:
+                print(f"   ⚠️  Cache apply failed: {e}")
         
         # Build compact recipe list for LLM
         recipe_list = []
@@ -729,6 +771,11 @@ Return ONLY valid JSON."""
                     
                     # Add remaining recipes beyond max_to_rerank
                     reranked.extend(recipes[max_to_rerank:])
+                    
+                    # Cache the ranking order (just the indices, not full data)
+                    cached_order = [item.get('id') for item in ranking if item.get('id') is not None]
+                    self._set_cache(cache_key, cached_order)
+                    print(f"   💾 RAG Rerank cached")
                     
                     print(f"   🎯 RAG Re-ranked {len(ranking)} recipes")
                     return reranked
